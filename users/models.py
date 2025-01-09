@@ -17,13 +17,14 @@ class CustomUserManager(BaseUserManager):
         return self.create_user(email, password, **extra_fields)
 
 class CustomUser(AbstractUser):
-    username = None  # Wyłączamy pole username
+    
     email = models.EmailField('email address', unique=True)
     avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
     status = models.CharField(max_length=100, blank=True)
+    username = models.CharField(max_length=150, unique=True)  
 
-    USERNAME_FIELD = 'email'  # Ustawiamy email jako pole do logowania
-    REQUIRED_FIELDS = []  # Email jest już wymagany przez USERNAME_FIELD
+    USERNAME_FIELD = 'email'  
+    REQUIRED_FIELDS = ['username']  
 
     objects = CustomUserManager()
 
