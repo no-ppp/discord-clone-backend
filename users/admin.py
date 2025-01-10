@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin
-
+from .models import FriendRequest
 User = get_user_model()
 
 @admin.register(User)
@@ -27,3 +27,9 @@ class CustomUserAdmin(UserAdmin):
             'fields': ('email', 'password1', 'password2'),
         }),
     )
+@admin.register(FriendRequest)
+class FriendRequestAdmin(admin.ModelAdmin):
+    list_display = ('sender', 'receiver', 'status', 'created_at')
+    list_filter = ('status', 'created_at')
+    search_fields = ('sender__email', 'receiver__email')
+    ordering = ('-created_at',)

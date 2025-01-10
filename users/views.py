@@ -166,9 +166,41 @@ class UserViewSet(viewsets.ModelViewSet):
     @extend_schema(
         summary="Wysyłanie zaproszenia do znajomych",
         description="Wysyła zaproszenie do znajomych do wybranego użytkownika",
+        parameters=[
+            OpenApiParameter(
+                name="id",
+                type=int,
+                location=OpenApiParameter.PATH,
+                description="ID użytkownika, do którego wysyłamy zaproszenie"
+            ),
+        ],
+        request=None,  # Nie potrzebujemy body w request
         responses={
-            200: OpenApiResponse(description="Zaproszenie wysłane"),
-            400: OpenApiResponse(description="Błąd wysyłania zaproszenia")
+            200: OpenApiResponse(
+                description="Zaproszenie wysłane",
+                response={
+                    'type': 'object',
+                    'properties': {
+                        'message': {
+                            'type': 'string',
+                            'example': 'Zaproszenie wysłane'
+                        }
+                    }
+                }
+            ),
+            400: OpenApiResponse(
+                description="Błąd wysyłania zaproszenia",
+                response={
+                    'type': 'object',
+                    'properties': {
+                        'error': {
+                            'type': 'string',
+                            'example': 'Nie możesz wysłać zaproszenia do samego siebie'
+                        }
+                    }
+                }
+            ),
+            404: OpenApiResponse(description="Użytkownik nie znaleziony")
         }
     )
     @action(detail=True, methods=['POST'])
@@ -182,9 +214,23 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if FriendRequest.objects.filter(sender=sender, receiver=receiver).exists():
+        if FriendRequest.objects.filter(
+            sender=sender, 
+            receiver=receiver,
+            status=FriendRequest.PENDING
+        ).exists():
             return Response(
                 {'error': 'Zaproszenie już zostało wysłane'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if FriendRequest.objects.filter(
+            sender=sender, 
+            receiver=receiver,
+            status=FriendRequest.ACCEPTED
+        ).exists():
+            return Response(
+                {'error': 'Ten użytkownik jest już Twoim znajomym'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 

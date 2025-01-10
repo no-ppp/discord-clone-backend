@@ -9,7 +9,7 @@ from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.core.mail import send_mail
 from django.conf import settings
-from .models import FriendRequest
+from .models import FriendRequest, Notification
 
 User = get_user_model()
 
@@ -161,3 +161,11 @@ class FriendRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = FriendRequest
         fields = ['id', 'sender', 'receiver', 'status', 'created_at'] 
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    sender = UserSerializer(read_only=True)
+
+    class Meta:
+        model = Notification
+        fields = ['id', 'sender', 'notification_type', 'text', 'is_read', 'created_at']

@@ -1,5 +1,6 @@
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
+from django.conf import settings
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
@@ -53,12 +54,12 @@ class FriendRequest(models.Model):
     ]
 
     sender = models.ForeignKey(
-        CustomUser,
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='sent_friend_requests'
     )
     receiver = models.ForeignKey(
-        CustomUser,
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='received_friend_requests'
     )
@@ -75,3 +76,34 @@ class FriendRequest(models.Model):
 
     def __str__(self):
         return f"{self.sender} -> {self.receiver} ({self.status})"
+
+class Notification(models.Model):
+    FRIEND_REQUEST = 'friend_request'
+    FRIEND_REQUEST_ACCEPTED = 'friend_request_accepted'
+    FRIEND_REQUEST_REJECTED = 'friend_request_rejected'
+
+    TYPE_CHOICES = [
+        (FRIEND_REQUEST, 'Zaproszenie do znajomych'),
+        (FRIEND_REQUEST_ACCEPTED, 'Zaakceptowane zaproszenie do znajomych'),
+        (FRIEND_REQUEST_REJECTED, 'Odrzucone zaproszenie do znajomych'),
+    ]
+
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='notifications'
+    )
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='sent_notifications'
+    )
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_read = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['-created_at'] 
+    
+    def __str__(self):
+        return f"{self.sender} -> {self.recipient} ({self.text})"
