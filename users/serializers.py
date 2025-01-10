@@ -28,31 +28,15 @@ class UserSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if attrs.get('password') != attrs.get('password2'):
             raise serializers.ValidationError({"password": "Hasła muszą być takie same"})
-
-        try:
-            validate_password(attrs.get('password'))
-        except ValidationError as e:
-            raise serializers.ValidationError({"password": list(e.messages)})
-
         return attrs
 
     def create(self, validated_data):
-        # Usuwamy password2 z validated_data
         validated_data.pop('password2', None)
+        email = validated_data.get('email')
+        # Używamy email jako username
+        validated_data['username'] = email
         
-        # Tworzymy użytkownika z zaszyfrowanym hasłem
-        user = User.objects.create_user(
-            email=validated_data['email'],
-            password=validated_data['password']
-        )
-
-        # Dodajemy pozostałe pola jeśli istnieją
-        if 'avatar' in validated_data:
-            user.avatar = validated_data['avatar']
-        if 'status' in validated_data:
-            user.status = validated_data['status']
-        
-        user.save()
+        user = User.objects.create_user(**validated_data)
         return user
 
     def update(self, instance, validated_data):
@@ -160,12 +144,26 @@ class FriendRequestSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = FriendRequest
-        fields = ['id', 'sender', 'receiver', 'status', 'created_at'] 
-
+        fields = ['id', 'sender', 'receiver', 'status', 'created_at', 'is_read']
+        read_only_fields = ['created_at']
 
 class NotificationSerializer(serializers.ModelSerializer):
-    sender = UserSerializer(read_only=True)
+    sender = serializers.SerializerMethodField()
+    sender_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Notification
-        fields = ['id', 'sender', 'notification_type', 'text', 'is_read', 'created_at']
+        fields = ['id', 'recipient', 'text', 'is_read', 'created_at', 'sender', 'sender_id']
+        read_only_fields = ['created_at', 'recipient', 'sender', 'sender_id']
+
+    def get_sender(self, obj):
+        # Jeśli to notyfikacja o zaproszeniu, sender to osoba wysyłająca zaproszenie
+        if obj.related_request:
+            return obj.related_request.sender.email
+        return None
+
+    def get_sender_id(self, obj):
+        # Zwracamy ID sendera do nawigacji
+        if obj.related_request:
+            return obj.related_request.sender.id
+        return None

@@ -17,7 +17,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from users.views import UserViewSet, RegisterView, LogoutView, PasswordResetView, PasswordResetConfirmView, LoginView
+from users.views import UserViewSet, RegisterView, LogoutView, PasswordResetView, PasswordResetConfirmView, LoginView, NotificationViewSet
 from chat_rooms.views import ChatRoomViewSet
 from messages_api.views import MessageViewSet
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
@@ -39,6 +39,7 @@ router = DefaultRouter()
 router.register(r'users', UserViewSet)
 router.register(r'chat-rooms', ChatRoomViewSet)
 router.register(r'messages', MessageViewSet)
+router.register(r'notifications', NotificationViewSet, basename='notification')
 
 urlpatterns = [
     path('admin/', admin.site.urls),

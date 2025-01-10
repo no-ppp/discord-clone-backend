@@ -2,7 +2,7 @@ from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 from django.conf import settings
 
-class CustomUserManager(BaseUserManager):
+class UserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
         if not email:
             raise ValueError('Email jest wymagany')
@@ -20,24 +20,14 @@ class CustomUserManager(BaseUserManager):
         return self.create_user(email, password, **extra_fields)
 
 class CustomUser(AbstractUser):
-    
-    email = models.EmailField('email address', unique=True)
+    email = models.EmailField(unique=True)
     avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
-    status = models.CharField(max_length=100, blank=True)
-    username = models.CharField(max_length=150, unique=True)  
+    status = models.CharField(max_length=100, null=True, blank=True)
 
-    USERNAME_FIELD = 'email'  
-    REQUIRED_FIELDS = ['username']  
+    objects = UserManager()
 
-    objects = CustomUserManager()
-
-    # Pole do zarządzania znajomymi
-    friends = models.ManyToManyField(
-        'self',
-        through='FriendRequest',
-        symmetrical=False,
-        related_name='friend_requests'
-    )
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = []
 
     def __str__(self):
         return self.email
@@ -70,6 +60,7 @@ class FriendRequest(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    is_read = models.BooleanField(default=False)
 
     class Meta:
         unique_together = ('sender', 'receiver')
@@ -77,33 +68,41 @@ class FriendRequest(models.Model):
     def __str__(self):
         return f"{self.sender} -> {self.receiver} ({self.status})"
 
+    def create_notification(self):
+        """Automatycznie tworzy odpowiednią notyfikację"""
+        if self.status == self.PENDING:
+            text = f"{self.sender.email} wysłał(a) Ci zaproszenie do znajomych"
+            recipient = self.receiver
+        elif self.status == self.ACCEPTED:
+            text = f"{self.receiver.email} zaakceptował(a) Twoje zaproszenie do znajomych"
+            recipient = self.sender
+        else:  # REJECTED
+            text = f"{self.receiver.email} odrzucił(a) Twoje zaproszenie do znajomych"
+            recipient = self.sender
+
+        Notification.objects.create(
+            recipient=recipient,
+            related_request=self,
+            text=text
+        )
+
 class Notification(models.Model):
-    FRIEND_REQUEST = 'friend_request'
-    FRIEND_REQUEST_ACCEPTED = 'friend_request_accepted'
-    FRIEND_REQUEST_REJECTED = 'friend_request_rejected'
-
-    TYPE_CHOICES = [
-        (FRIEND_REQUEST, 'Zaproszenie do znajomych'),
-        (FRIEND_REQUEST_ACCEPTED, 'Zaakceptowane zaproszenie do znajomych'),
-        (FRIEND_REQUEST_REJECTED, 'Odrzucone zaproszenie do znajomych'),
-    ]
-
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='notifications'
     )
-    sender = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
+    related_request = models.ForeignKey(
+        FriendRequest,
         on_delete=models.CASCADE,
-        related_name='sent_notifications'
+        related_name='notifications'
     )
-    text = models.TextField()
-    created_at = models.DateTimeField(auto_now_add=True)
+    text = models.CharField(max_length=255)
     is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['-created_at'] 
-    
+        ordering = ['-created_at']
+
     def __str__(self):
-        return f"{self.sender} -> {self.recipient} ({self.text})"
+        return f"Notyfikacja dla {self.recipient}: {self.text}"

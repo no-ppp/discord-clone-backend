@@ -6,10 +6,14 @@ from rest_framework.decorators import action
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate, get_user_model
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiParameter
-from .models import FriendRequest
-from .serializers import UserSerializer, FriendRequestSerializer
+from .models import FriendRequest, Notification, CustomUser as User
+from .serializers import UserSerializer, FriendRequestSerializer, NotificationSerializer
+from rest_framework import serializers
+from django.shortcuts import get_object_or_404
+import logging
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
@@ -121,15 +125,20 @@ class RegisterView(APIView):
             )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+class LogoutSerializer(serializers.Serializer):
+    refresh_token = serializers.CharField()
+
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = LogoutSerializer
 
     @extend_schema(
         summary="Wylogowanie użytkownika",
         description="Wylogowuje użytkownika i unieważnia token",
+        request=LogoutSerializer,
         responses={
             200: OpenApiResponse(description="Pomyślne wylogowanie"),
-            401: OpenApiResponse(description="Brak autoryzacji")
+            400: OpenApiResponse(description="Błąd wylogowania")
         }
     )
     def post(self, request):
@@ -203,7 +212,7 @@ class UserViewSet(viewsets.ModelViewSet):
             404: OpenApiResponse(description="Użytkownik nie znaleziony")
         }
     )
-    @action(detail=True, methods=['POST'])
+    @action(detail=True, methods=['POST'], url_path='send-friend-request')
     def send_friend_request(self, request, pk=None):
         receiver = self.get_object()
         sender = request.user
@@ -214,27 +223,8 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if FriendRequest.objects.filter(
-            sender=sender, 
-            receiver=receiver,
-            status=FriendRequest.PENDING
-        ).exists():
-            return Response(
-                {'error': 'Zaproszenie już zostało wysłane'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if FriendRequest.objects.filter(
-            sender=sender, 
-            receiver=receiver,
-            status=FriendRequest.ACCEPTED
-        ).exists():
-            return Response(
-                {'error': 'Ten użytkownik jest już Twoim znajomym'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        FriendRequest.objects.create(sender=sender, receiver=receiver)
+        friend_request = FriendRequest.objects.create(sender=sender, receiver=receiver)
+        friend_request.create_notification()  # Automatycznie tworzy notyfikację
         return Response({'message': 'Zaproszenie wysłane'})
 
     @extend_schema(
@@ -271,45 +261,62 @@ class UserViewSet(viewsets.ModelViewSet):
         summary="Akceptacja zaproszenia",
         description="Akceptuje zaproszenie do znajomych"
     )
-    @action(detail=True, methods=['POST'])
+    @action(detail=True, methods=['POST'], url_path='accept-friend-request')
     def accept_friend_request(self, request, pk=None):
-        friend_request = FriendRequest.objects.filter(
-            sender_id=pk,
+        sender = self.get_object()
+        friend_request = get_object_or_404(
+            FriendRequest,
+            sender=sender,
             receiver=request.user,
             status=FriendRequest.PENDING
-        ).first()
-
-        if not friend_request:
-            return Response(
-                {'error': 'Nie znaleziono zaproszenia'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
+        )
+        
         friend_request.status = FriendRequest.ACCEPTED
         friend_request.save()
+        friend_request.create_notification()  # Automatycznie tworzy notyfikację
+        
         return Response({'message': 'Zaproszenie zaakceptowane'})
 
     @extend_schema(
         summary="Odrzucenie zaproszenia",
         description="Odrzuca zaproszenie do znajomych"
     )
-    @action(detail=True, methods=['POST'])
+    @action(detail=True, methods=['POST'], url_path='reject-friend-request')
     def reject_friend_request(self, request, pk=None):
-        friend_request = FriendRequest.objects.filter(
-            sender_id=pk,
-            receiver=request.user,
-            status=FriendRequest.PENDING
-        ).first()
-
-        if not friend_request:
-            return Response(
-                {'error': 'Nie znaleziono zaproszenia'},
-                status=status.HTTP_404_NOT_FOUND
+        try:
+            logger.info(f"Próba odrzucenia zaproszenia od użytkownika {pk}")
+            logger.info(f"Zalogowany użytkownik: {request.user.id}")
+            
+            sender = get_object_or_404(User, pk=pk)
+            
+            # Sprawdźmy jakie zaproszenia istnieją
+            all_requests = FriendRequest.objects.filter(
+                sender=sender,
+                receiver=request.user
             )
+            logger.info(f"Znalezione zaproszenia: {list(all_requests.values())}")
+            
+            friend_request = all_requests.filter(status=FriendRequest.PENDING).first()
+            
+            if not friend_request:
+                logger.warning(f"Nie znaleziono oczekującego zaproszenia od {pk} do {request.user.id}")
+                return Response(
+                    {'error': 'Nie znaleziono oczekującego zaproszenia'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
 
-        friend_request.status = FriendRequest.REJECTED
-        friend_request.save()
-        return Response({'message': 'Zaproszenie odrzucone'})
+            friend_request.status = FriendRequest.REJECTED
+            friend_request.save()
+            
+            logger.info(f"Zaproszenie {friend_request.id} zostało odrzucone")
+            return Response({'message': 'Zaproszenie odrzucone'})
+            
+        except Exception as e:
+            logger.error(f"Błąd podczas odrzucania zaproszenia: {str(e)}")
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
     @extend_schema(
         summary="Dane zalogowanego użytkownika",
@@ -390,3 +397,62 @@ class PasswordResetConfirmView(APIView):
                 'message': 'Hasło zostało zmienione pomyślnie'
             })
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class NotificationViewSet(viewsets.ModelViewSet):
+    serializer_class = NotificationSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_value_regex = '[0-9]+'
+
+    def get_queryset(self):
+        return Notification.objects.filter(recipient=self.request.user)
+
+    @extend_schema(
+        summary="Lista notyfikacji",
+        description="Zwraca listę notyfikacji dla zalogowanego użytkownika",
+        parameters=[
+            OpenApiParameter(
+                name="id",
+                type=int,
+                location=OpenApiParameter.PATH,
+                required=True,
+                description="ID notyfikacji"
+            ),
+        ],
+        responses={
+            200: NotificationSerializer(many=True),
+            401: OpenApiResponse(description="Brak autoryzacji")
+        }
+    )
+    def list(self, request):
+        notifications = self.get_queryset()
+        serializer = self.get_serializer(notifications, many=True)
+        return Response(serializer.data)
+
+    @extend_schema(
+        summary="Oznacz jako przeczytane",
+        description="Oznacza notyfikację jako przeczytaną"
+    )
+    @action(detail=True, methods=['POST'], url_path='mark-read')
+    def mark_read(self, request, pk=None):
+        notification = self.get_object()
+        notification.is_read = True
+        notification.save()
+        return Response({'status': 'ok'})
+
+    @extend_schema(
+        summary="Oznacz wszystkie jako przeczytane",
+        description="Oznacza wszystkie notyfikacje jako przeczytane"
+    )
+    @action(detail=False, methods=['POST'], url_path='mark-all-read')
+    def mark_all_read(self, request):
+        self.get_queryset().update(is_read=True)
+        return Response({'status': 'ok'})
+
+    @extend_schema(
+        summary="Liczba nieprzeczytanych",
+        description="Zwraca liczbę nieprzeczytanych notyfikacji"
+    )
+    @action(detail=False, methods=['GET'], url_path='unread-count')
+    def unread_count(self, request):
+        count = self.get_queryset().filter(is_read=False).count()
+        return Response({'count': count})
