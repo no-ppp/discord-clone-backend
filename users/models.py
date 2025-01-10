@@ -1,6 +1,7 @@
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 
 class UserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
@@ -23,6 +24,22 @@ class CustomUser(AbstractUser):
     email = models.EmailField(unique=True)
     avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
     status = models.CharField(max_length=100, null=True, blank=True)
+    bio = models.TextField(max_length=500, blank=True)
+    friends = models.ManyToManyField(
+        'self',
+        through='Friendship',
+        symmetrical=False,
+        related_name='user_friends'
+    )
+    last_online = models.DateTimeField(default=timezone.now)
+    is_online = models.BooleanField(default=False)
+    
+    # Prywatność
+    privacy_settings = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Ustawienia prywatności użytkownika"
+    )
 
     objects = UserManager()
 
@@ -31,6 +48,14 @@ class CustomUser(AbstractUser):
 
     def __str__(self):
         return self.email
+
+class Friendship(models.Model):
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='friendships')
+    friend = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='friend_friendships')
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        unique_together = ('user', 'friend')
 
 class FriendRequest(models.Model):
     PENDING = 'pending'
@@ -95,14 +120,36 @@ class Notification(models.Model):
     related_request = models.ForeignKey(
         FriendRequest,
         on_delete=models.CASCADE,
-        related_name='notifications'
+        related_name='notifications',
+        null=True,
+        blank=True
     )
     text = models.CharField(max_length=255)
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    notification_type = models.CharField(
+        max_length=50,
+        default='friend_request'
+    )
 
     class Meta:
         ordering = ['-created_at']
 
     def __str__(self):
         return f"Notyfikacja dla {self.recipient}: {self.text}"
+
+class UserBlock(models.Model):
+    user = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='user_blocks'
+    )
+    blocked_user = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='blocked_by'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'blocked_user')
