@@ -8,7 +8,7 @@ class CustomUserAdmin(admin.ModelAdmin):
 
 @admin.register(FriendRequest)
 class FriendRequestAdmin(admin.ModelAdmin):
-    list_display = ('sender', 'receiver', 'status', 'created_at', 'is_read')
+    list_display = ('id', 'sender', 'receiver', 'status', 'created_at', 'is_read')
     list_filter = ('status', 'is_read')
     search_fields = ('sender__email', 'receiver__email')
 

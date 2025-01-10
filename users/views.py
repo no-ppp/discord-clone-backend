@@ -5,12 +5,13 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.decorators import action
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate, get_user_model
-from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiParameter
+from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiParameter, OpenApiExample
 from .models import FriendRequest, Notification, CustomUser as User
 from .serializers import UserSerializer, FriendRequestSerializer, NotificationSerializer
 from rest_framework import serializers
 from django.shortcuts import get_object_or_404
 import logging
+from django.db.models import Q
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -231,7 +232,7 @@ class UserViewSet(viewsets.ModelViewSet):
         summary="Lista znajomych",
         description="Zwraca listę znajomych zalogowanego użytkownika"
     )
-    @action(detail=False, methods=['GET'])
+    @action(detail=False, methods=['GET'], url_path='my-friends')
     def my_friends(self, request):
         user = request.user
         friends = User.objects.filter(
@@ -248,7 +249,7 @@ class UserViewSet(viewsets.ModelViewSet):
         summary="Oczekujące zaproszenia",
         description="Zwraca listę oczekujących zaproszeń do znajomych"
     )
-    @action(detail=False, methods=['GET'])
+    @action(detail=False, methods=['GET'], url_path='pending-requests')
     def pending_requests(self, request):
         pending_requests = FriendRequest.objects.filter(
             receiver=request.user,
@@ -259,23 +260,80 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @extend_schema(
         summary="Akceptacja zaproszenia",
-        description="Akceptuje zaproszenie do znajomych"
+        description="Akceptuje zaproszenie do znajomych od wybranego użytkownika",
+        parameters=[
+            OpenApiParameter(
+                name="pk",
+                type=int,
+                location=OpenApiParameter.PATH,
+                description="ID użytkownika, którego zaproszenie akceptujemy"
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                description="Zaproszenie zaakceptowane",
+                response={
+                    'type': 'object',
+                    'properties': {
+                        'message': {
+                            'type': 'string',
+                            'example': 'Zaproszenie zaakceptowane'
+                        }
+                    }
+                }
+            ),
+            404: OpenApiResponse(
+                description="Nie znaleziono zaproszenia",
+                response={
+                    'type': 'object',
+                    'properties': {
+                        'error': {
+                            'type': 'string',
+                            'example': 'Nie znaleziono oczekującego zaproszenia'
+                        }
+                    }
+                }
+            ),
+            400: OpenApiResponse(
+                description="Błąd podczas akceptacji zaproszenia",
+                response={
+                    'type': 'object',
+                    'properties': {
+                        'error': {
+                            'type': 'string'
+                        }
+                    }
+                }
+            )
+        }
     )
     @action(detail=True, methods=['POST'], url_path='accept-friend-request')
     def accept_friend_request(self, request, pk=None):
-        sender = self.get_object()
-        friend_request = get_object_or_404(
-            FriendRequest,
-            sender=sender,
-            receiver=request.user,
-            status=FriendRequest.PENDING
-        )
-        
-        friend_request.status = FriendRequest.ACCEPTED
-        friend_request.save()
-        friend_request.create_notification()  # Automatycznie tworzy notyfikację
-        
-        return Response({'message': 'Zaproszenie zaakceptowane'})
+        try:
+            sender = self.get_object()
+            friend_request = FriendRequest.objects.filter(
+                sender=sender,
+                receiver=request.user,
+                status=FriendRequest.PENDING
+            ).first()
+
+            if not friend_request:
+                return Response(
+                    {'error': 'Nie znaleziono oczekującego zaproszenia'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            friend_request.status = FriendRequest.ACCEPTED
+            friend_request.save()
+            friend_request.create_notification()
+            
+            return Response({'message': 'Zaproszenie zaakceptowane'})
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
     @extend_schema(
         summary="Odrzucenie zaproszenia",
@@ -284,12 +342,14 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['POST'], url_path='reject-friend-request')
     def reject_friend_request(self, request, pk=None):
         try:
-            logger.info(f"Próba odrzucenia zaproszenia od użytkownika {pk}")
-            logger.info(f"Zalogowany użytkownik: {request.user.id}")
-            
+            all_users = User.objects.all()
+            logger.info(f"Dostępni użytkownicy: {list(all_users.values('id', 'email'))}")
+            logger.info(f"Szukamy użytkownika o ID: {pk}")
+            logger.info(f"Aktualny użytkownik: {request.user.id} ({request.user.email})")
+
             sender = get_object_or_404(User, pk=pk)
             
-            # Sprawdźmy jakie zaproszenia istnieją
+            # Sprawdź wszystkie zaproszenia
             all_requests = FriendRequest.objects.filter(
                 sender=sender,
                 receiver=request.user
@@ -299,7 +359,6 @@ class UserViewSet(viewsets.ModelViewSet):
             friend_request = all_requests.filter(status=FriendRequest.PENDING).first()
             
             if not friend_request:
-                logger.warning(f"Nie znaleziono oczekującego zaproszenia od {pk} do {request.user.id}")
                 return Response(
                     {'error': 'Nie znaleziono oczekującego zaproszenia'},
                     status=status.HTTP_404_NOT_FOUND
@@ -308,9 +367,14 @@ class UserViewSet(viewsets.ModelViewSet):
             friend_request.status = FriendRequest.REJECTED
             friend_request.save()
             
-            logger.info(f"Zaproszenie {friend_request.id} zostało odrzucone")
             return Response({'message': 'Zaproszenie odrzucone'})
             
+        except User.DoesNotExist:
+            logger.error(f"Nie znaleziono użytkownika o ID: {pk}")
+            return Response(
+                {'error': f'Nie znaleziono użytkownika o ID: {pk}'},
+                status=status.HTTP_404_NOT_FOUND
+            )
         except Exception as e:
             logger.error(f"Błąd podczas odrzucania zaproszenia: {str(e)}")
             return Response(
@@ -332,6 +396,33 @@ class UserViewSet(viewsets.ModelViewSet):
         Zwraca dane zalogowanego użytkownika
         """
         serializer = self.get_serializer(request.user)
+        return Response(serializer.data)
+
+    @extend_schema(
+        summary="Sprawdź pojedyncze zaproszenie",
+        description="Zwraca szczegóły konkretnego zaproszenia do znajomych",
+        responses={
+            200: FriendRequestSerializer,
+            404: OpenApiResponse(description="Nie znaleziono zaproszenia")
+        }
+    )
+    @action(detail=True, methods=['GET'], url_path='friend-request')
+    def get_friend_request(self, request, pk=None):
+        other_user = self.get_object()
+        
+        # Szukamy zaproszenia między zalogowanym użytkownikiem a wybranym użytkownikiem
+        friend_request = FriendRequest.objects.filter(
+            (Q(sender=request.user) & Q(receiver=other_user)) |
+            (Q(sender=other_user) & Q(receiver=request.user))
+        ).first()
+        
+        if not friend_request:
+            return Response(
+                {'error': 'Nie znaleziono zaproszenia'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        serializer = FriendRequestSerializer(friend_request)
         return Response(serializer.data)
 
 class PasswordResetView(APIView):
