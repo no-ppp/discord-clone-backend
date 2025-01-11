@@ -50,6 +50,7 @@ class LoginView(APIView):
                             'properties': {
                                 'id': {'type': 'integer'},
                                 'email': {'type': 'string'},
+                                'username': {'type': 'string'},
                                 'avatar': {'type': 'string', 'nullable': True},
                                 'status': {'type': 'string', 'nullable': True},
                             }
@@ -73,15 +74,27 @@ class LoginView(APIView):
 
         user = authenticate(email=email, password=password)
 
+        # Dodajmy debugging
+        print("Authenticating user:", email)
+        print("User authenticated:", user is not None)
+
         if not user:
             return Response(
                 {'error': 'Nieprawidłowy email lub hasło'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
+        print("User data:", {
+            'id': user.id,
+            'email': user.email,
+            'username': getattr(user, 'username', None),
+            'avatar': getattr(user, 'avatar', None),
+            'status': getattr(user, 'status', None),
+            'bio': getattr(user, 'bio', None),
+            'is_online': getattr(user, 'is_online', None),
+        })
 
         refresh = RefreshToken.for_user(user)
-
-        return Response({
+        response_data = {
             'tokens': {
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
@@ -90,13 +103,18 @@ class LoginView(APIView):
                 'id': user.id,
                 'email': user.email,
                 'username': user.username or user.email.split('@')[0],
-                'avatar': user.avatar.url if user.avatar else None,
-                'status': user.status,
-                'bio': user.bio if hasattr(user, 'bio') else None,
-                'is_online': user.is_online if hasattr(user, 'is_online') else False,
+                'avatar': user.avatar.url if getattr(user, 'avatar', None) else None,
+                'status': getattr(user, 'status', None),
+                'bio': getattr(user, 'bio', None),
+                'is_online': getattr(user, 'is_online', False),
                 'is_staff': user.is_staff
             }
-        })
+        }
+
+        # Debug response
+        print("Response data:", response_data)
+
+        return Response(response_data)
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]

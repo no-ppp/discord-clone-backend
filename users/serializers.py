@@ -1,6 +1,5 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
@@ -73,30 +72,6 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         validated_data.pop('password2')
         user = User.objects.create_user(**validated_data)
         return user
-
-class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-    username_field = 'email'
-    
-    def validate(self, attrs):
-        email = attrs.get('email')
-        password = attrs.get('password')
-        
-        if email and password:
-            user = authenticate(request=self.context.get('request'),
-                              username=email,  # login from email
-                              password=password)
-            
-            if not user:
-                raise serializers.ValidationError('Nieprawidłowy email lub hasło.')
-            
-            refresh = self.get_token(user)
-            
-            return {
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
-            }
-        
-        raise serializers.ValidationError('Musisz podać email i hasło.') 
 
 class PasswordResetSerializer(serializers.Serializer):
     email = serializers.EmailField()
