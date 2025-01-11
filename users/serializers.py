@@ -83,7 +83,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         
         if email and password:
             user = authenticate(request=self.context.get('request'),
-                              username=email,  # Twój model powinien obsługiwać logowanie przez email
+                              username=email,  # login from email
                               password=password)
             
             if not user:

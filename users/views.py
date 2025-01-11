@@ -89,8 +89,12 @@ class LoginView(APIView):
             'user': {
                 'id': user.id,
                 'email': user.email,
+                'username': user.username or user.email.split('@')[0],
                 'avatar': user.avatar.url if user.avatar else None,
                 'status': user.status,
+                'bio': user.bio if hasattr(user, 'bio') else None,
+                'is_online': user.is_online if hasattr(user, 'is_online') else False,
+                'is_staff': user.is_staff
             }
         })
 

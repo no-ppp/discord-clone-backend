@@ -24,7 +24,9 @@ class CustomUser(AbstractUser):
     email = models.EmailField(unique=True)
     avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
     status = models.CharField(max_length=100, null=True, blank=True)
-    bio = models.TextField(max_length=500, blank=True)
+    bio = models.TextField(blank=True, null=True)
+    is_online = models.BooleanField(default=False)
+    last_online = models.DateTimeField(default=timezone.now)
     friends = models.ManyToManyField(
         'self',
         through='Friendship',
@@ -32,8 +34,6 @@ class CustomUser(AbstractUser):
         symmetrical=False,
         related_name='user_friends'
     )
-    last_online = models.DateTimeField(default=timezone.now)
-    is_online = models.BooleanField(default=False)
     
     # Prywatność
     privacy_settings = models.JSONField(
