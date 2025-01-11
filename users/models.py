@@ -28,6 +28,7 @@ class CustomUser(AbstractUser):
     friends = models.ManyToManyField(
         'self',
         through='Friendship',
+        through_fields=('user', 'friend'),
         symmetrical=False,
         related_name='user_friends'
     )
@@ -50,12 +51,87 @@ class CustomUser(AbstractUser):
         return self.email
 
 class Friendship(models.Model):
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='friendships')
-    friend = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='friend_friendships')
+    STATUS_CHOICES = [
+        ('active', 'Aktywna'),
+        ('blocked', 'Zablokowana'),
+        ('unfriended', 'Zakończona')
+    ]
+
+    user = models.ForeignKey(
+        CustomUser, 
+        on_delete=models.CASCADE, 
+        related_name='friendships'
+    )
+    friend = models.ForeignKey(
+        CustomUser, 
+        on_delete=models.CASCADE, 
+        related_name='friend_friendships'
+    )
+    status = models.CharField(
+        max_length=20, 
+        choices=STATUS_CHOICES, 
+        default='active'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     
+    # Opcjonalne pola dla lepszego zarządzania relacją
+    blocked_by = models.ForeignKey(
+        CustomUser, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='blocked_friendships'
+    )
+    notes = models.TextField(
+        blank=True, 
+        null=True, 
+        help_text="Prywatne notatki o znajomym"
+    )
+
     class Meta:
         unique_together = ('user', 'friend')
+        indexes = [
+            models.Index(fields=['user', 'status']),
+            models.Index(fields=['friend', 'status']),
+        ]
+
+    def __str__(self):
+        return f"{self.user} -> {self.friend} ({self.status})"
+
+    def block(self, blocked_by_user):
+        """Blokuje znajomość"""
+        self.status = 'blocked'
+        self.blocked_by = blocked_by_user
+        self.save()
+
+    def unblock(self):
+        """Odblokowuje znajomość"""
+        self.status = 'active'
+        self.blocked_by = None
+        self.save()
+
+    def unfriend(self):
+        """Kończy znajomość"""
+        self.status = 'unfriended'
+        self.save()
+
+    @classmethod
+    def get_friends(cls, user):
+        """Zwraca aktywnych znajomych użytkownika"""
+        return CustomUser.objects.filter(
+            friend_friendships__user=user,
+            friend_friendships__status='active'
+        )
+
+    @classmethod
+    def are_friends(cls, user1, user2):
+        """Sprawdza czy użytkownicy są znajomymi"""
+        return cls.objects.filter(
+            user=user1,
+            friend=user2,
+            status='active'
+        ).exists()
 
 class FriendRequest(models.Model):
     PENDING = 'pending'

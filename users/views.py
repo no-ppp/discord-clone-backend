@@ -6,8 +6,8 @@ from rest_framework.decorators import action
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate, get_user_model
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiParameter, OpenApiExample
-from .models import FriendRequest, Notification, CustomUser as User
-from .serializers import UserSerializer, FriendRequestSerializer, NotificationSerializer
+from .models import FriendRequest, Notification, CustomUser as User, Friendship
+from .serializers import UserSerializer, FriendRequestSerializer, NotificationSerializer, FriendSerializer
 from rest_framework import serializers
 from django.shortcuts import get_object_or_404
 import logging
@@ -229,23 +229,6 @@ class UserViewSet(viewsets.ModelViewSet):
         return Response({'message': 'Zaproszenie wysłane'})
 
     @extend_schema(
-        summary="Lista znajomych",
-        description="Zwraca listę znajomych zalogowanego użytkownika"
-    )
-    @action(detail=False, methods=['GET'], url_path='my-friends')
-    def my_friends(self, request):
-        user = request.user
-        friends = User.objects.filter(
-            sent_friend_requests__receiver=user,
-            sent_friend_requests__status=FriendRequest.ACCEPTED
-        ) | User.objects.filter(
-            received_friend_requests__sender=user,
-            received_friend_requests__status=FriendRequest.ACCEPTED
-        )
-        serializer = self.get_serializer(friends, many=True)
-        return Response(serializer.data)
-
-    @extend_schema(
         summary="Oczekujące zaproszenia",
         description="Zwraca listę oczekujących zaproszeń do znajomych"
     )
@@ -323,8 +306,15 @@ class UserViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
+            # Akceptuj zaproszenie
             friend_request.status = FriendRequest.ACCEPTED
             friend_request.save()
+            
+            # Utwórz relację znajomości w obie strony
+            Friendship.objects.create(user=request.user, friend=sender)
+            Friendship.objects.create(user=sender, friend=request.user)
+            
+            # Stwórz powiadomienie
             friend_request.create_notification()
             
             return Response({'message': 'Zaproszenie zaakceptowane'})
@@ -424,6 +414,44 @@ class UserViewSet(viewsets.ModelViewSet):
         
         serializer = FriendRequestSerializer(friend_request)
         return Response(serializer.data)
+
+    @extend_schema(
+        summary="Lista znajomych użytkownika",
+        description="Zwraca listę aktywnych znajomych użytkownika"
+    )
+    @action(detail=True, methods=['GET'], url_path='friends')
+    def get_friends(self, request, pk=None):
+        user = self.get_object()
+        friends = Friendship.get_friends(user)
+        serializer = FriendSerializer(friends, many=True)
+        return Response(serializer.data)
+
+    @extend_schema(
+        summary="Szczegóły znajomości",
+        description="Zwraca szczegóły relacji znajomości między dwoma użytkownikami"
+    )
+    @action(detail=True, methods=['GET'], url_path='friends')
+    def get_friendship_status(self, request, pk=None):
+        other_user = self.get_object()
+        
+        try:
+            friendship = Friendship.objects.get(
+                user=request.user,
+                friend=other_user
+            )
+            
+            return Response({
+                'status': friendship.status,
+                'since': friendship.created_at,
+                'last_updated': friendship.updated_at,
+                'is_blocked': friendship.status == 'blocked',
+                'blocked_by': friendship.blocked_by.id if friendship.blocked_by else None
+            })
+        except Friendship.DoesNotExist:
+            return Response({
+                'status': 'not_friends',
+                'is_blocked': False
+            })
 
 class PasswordResetView(APIView):
     permission_classes = [AllowAny]

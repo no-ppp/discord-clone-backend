@@ -167,3 +167,19 @@ class NotificationSerializer(serializers.ModelSerializer):
         if obj.related_request:
             return obj.related_request.sender.id
         return None
+
+class FriendSerializer(serializers.ModelSerializer):
+    name = serializers.SerializerMethodField()
+    status = serializers.CharField(source='status', default='offline')
+    activity = serializers.CharField(source='bio', default='')
+    friend = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ['id', 'name', 'status', 'activity', 'friend']
+
+    def get_name(self, obj):
+        return obj.email.split('@')[0] 
+
+    def get_friend(self, obj):
+        return True  
