@@ -1,24 +1,37 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from .models import FriendRequest, Notification, Friendship
 from django.contrib.auth import authenticate
-from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ValidationError
-from django.contrib.auth.tokens import default_token_generator
-from django.utils.http import urlsafe_base64_encode
-from django.utils.encoding import force_bytes
-from django.core.mail import send_mail
-from django.conf import settings
-from .models import FriendRequest, Notification
+from rest_framework.authtoken.models import Token
+from rest_framework.authtoken.serializers import AuthTokenSerializer
+from rest_framework_simplejwt.tokens import RefreshToken
+from drf_spectacular.utils import extend_schema_field
+from django.db.models import CharField
 
 User = get_user_model()
 
-class UserSerializer(serializers.ModelSerializer):
+# Podstawowy serializer do wyświetlania danych użytkownika
+class BaseUserSerializer(serializers.ModelSerializer):
+    username = serializers.SerializerMethodField()
+
+    @extend_schema_field(CharField())
+    def get_username(self, obj) -> str:
+        return obj.username or obj.email.split('@')[0]
+
+class UserSerializer(BaseUserSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'username', 'avatar', 'status', 'is_online']
+        read_only_fields = ['id', 'email']
+
+# Serializer do rejestracji
+class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True)
     password2 = serializers.CharField(write_only=True, required=True)
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'password', 'password2', 'avatar', 'status']
+        fields = ['email', 'password', 'password2', 'avatar', 'status']
         extra_kwargs = {
             'password': {'write_only': True},
             'password2': {'write_only': True},
@@ -32,87 +45,18 @@ class UserSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop('password2', None)
         email = validated_data.get('email')
-        # Używamy email jako username
         validated_data['username'] = email
-        
-        user = User.objects.create_user(**validated_data)
-        return user
+        return User.objects.create_user(**validated_data)
 
-    def update(self, instance, validated_data):
-        # Jeśli aktualizujemy hasło
-        if 'password' in validated_data:
-            password = validated_data.pop('password')
-            instance.set_password(password)
-        
-        # Aktualizujemy pozostałe pola
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        
-        instance.save()
-        return instance
+# Serializer do znajomych
+class FriendSerializer(BaseUserSerializer):
+    is_online = serializers.BooleanField(default=False)
 
-class UserRegistrationSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['username', 'email', 'password', 'password2']
-        extra_kwargs = {
-            'password': {'write_only': True}
-        }
+        fields = ['id', 'email', 'username', 'avatar', 'status', 'is_online']
 
-    def validate(self, data):
-        if data['password'] != data['password2']:
-            raise serializers.ValidationError("Hasła muszą być takie same!")
-        try:
-            validate_password(data['password'])
-        except ValidationError as e:
-            raise serializers.ValidationError({'password': list(e.messages)})
-        return data
-
-    def create(self, validated_data):
-        validated_data.pop('password2')
-        user = User.objects.create_user(**validated_data)
-        return user
-
-class PasswordResetSerializer(serializers.Serializer):
-    email = serializers.EmailField()
-
-    def validate_email(self, value):
-        try:
-            self.user = User.objects.get(email=value)
-        except User.DoesNotExist:
-            raise serializers.ValidationError("Użytkownik o podanym adresie email nie istnieje")
-        return value
-
-    def save(self):
-        user = self.user
-        token = default_token_generator.make_token(user)
-        uid = urlsafe_base64_encode(force_bytes(user.pk))
-        
-        reset_url = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}"
-        
-        send_mail(
-            'Reset hasła',
-            f'Kliknij w link aby zresetować hasło: {reset_url}',
-            settings.DEFAULT_FROM_EMAIL,
-            [user.email],
-            fail_silently=False,
-        )
-
-class PasswordResetConfirmSerializer(serializers.Serializer):
-    password = serializers.CharField(write_only=True)
-    password2 = serializers.CharField(write_only=True)
-    token = serializers.CharField()
-    uidb64 = serializers.CharField()
-
-    def validate(self, data):
-        if data['password'] != data['password2']:
-            raise serializers.ValidationError("Hasła muszą być takie same!")
-        try:
-            validate_password(data['password'])
-        except ValidationError as e:
-            raise serializers.ValidationError({'password': list(e.messages)})
-        return data 
-
+# Serializer do zaproszeń do znajomych
 class FriendRequestSerializer(serializers.ModelSerializer):
     sender = UserSerializer(read_only=True)
     receiver = UserSerializer(read_only=True)
@@ -120,41 +64,106 @@ class FriendRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = FriendRequest
         fields = ['id', 'sender', 'receiver', 'status', 'created_at', 'is_read']
-        read_only_fields = ['created_at']
+        read_only_fields = ['id', 'created_at']
 
+# Serializer do powiadomień
 class NotificationSerializer(serializers.ModelSerializer):
-    sender = serializers.SerializerMethodField()
-    sender_id = serializers.SerializerMethodField()
+    sender = UserSerializer(source='related_request.sender', read_only=True)
 
     class Meta:
         model = Notification
-        fields = ['id', 'recipient', 'text', 'is_read', 'created_at', 'sender', 'sender_id']
-        read_only_fields = ['created_at', 'recipient', 'sender', 'sender_id']
+        fields = ['id', 'recipient', 'text', 'is_read', 'created_at', 'sender']
+        read_only_fields = ['id', 'created_at', 'recipient', 'sender']
 
-    def get_sender(self, obj):
-        # Jeśli to notyfikacja o zaproszeniu, sender to osoba wysyłająca zaproszenie
-        if obj.related_request:
-            return obj.related_request.sender.email
-        return None
+# Serializer do resetu hasła (jeśli potrzebujesz)
+class PasswordResetSerializer(serializers.Serializer):
+    email = serializers.EmailField()
 
-    def get_sender_id(self, obj):
-        # Zwracamy ID sendera do nawigacji
-        if obj.related_request:
-            return obj.related_request.sender.id
-        return None
+    def validate_email(self, value):
+        if not User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Użytkownik o podanym adresie email nie istnieje")
+        return value  
 
-class FriendSerializer(serializers.ModelSerializer):
-    name = serializers.SerializerMethodField()
-    status = serializers.CharField(source='status', default='offline')
-    activity = serializers.CharField(source='bio', default='')
-    friend = serializers.SerializerMethodField()
+class LoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
 
-    class Meta:
-        model = User
-        fields = ['id', 'name', 'status', 'activity', 'friend']
+    def validate(self, attrs):
+        email = attrs.get('email')
+        password = attrs.get('password')
 
-    def get_name(self, obj):
-        return obj.email.split('@')[0] 
+        if not email or not password:
+            raise serializers.ValidationError('Musisz podać email i hasło.')
 
-    def get_friend(self, obj):
-        return True  
+        user = authenticate(email=email, password=password)
+
+        if not user:
+            raise serializers.ValidationError('Nieprawidłowy email lub hasło.')
+
+        # Generuj tokeny
+        refresh = RefreshToken.for_user(user)
+        
+        # Aktualizuj status online
+        user.is_online = True
+        user.save(update_fields=['is_online'])
+
+        # Przygotuj dane odpowiedzi
+        return {
+            'tokens': {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            },
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'username': user.username or user.email.split('@')[0],
+                'avatar': user.avatar.url if user.avatar else None,
+                'status': user.status,
+                'bio': getattr(user, 'bio', None),
+                'is_online': True,
+                'is_staff': user.is_staff
+            }
+        }  
+
+class FriendshipStatusSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    since = serializers.DateTimeField(required=False)
+    last_updated = serializers.DateTimeField(required=False)
+    is_blocked = serializers.BooleanField()
+    blocked_by = serializers.IntegerField(allow_null=True)
+
+    def to_representation(self, instance):
+        if isinstance(instance, Friendship):
+            return {
+                'status': instance.status,
+                'since': instance.created_at,
+                'last_updated': instance.updated_at,
+                'is_blocked': instance.status == 'blocked',
+                'blocked_by': instance.blocked_by.id if instance.blocked_by else None
+            }
+        return {
+            'status': 'not_friends',
+            'is_blocked': False
+        }  
+
+class LogoutSerializer(serializers.Serializer):
+    refresh_token = serializers.CharField()
+
+    def validate(self, data):
+        try:
+            token = RefreshToken(data['refresh_token'])
+            token.blacklist()
+            return data
+        except Exception:
+            raise serializers.ValidationError('Nieprawidłowy token')  
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    token = serializers.CharField()
+    uidb64 = serializers.CharField()
+    new_password = serializers.CharField(write_only=True)
+    new_password2 = serializers.CharField(write_only=True)
+
+    def validate(self, data):
+        if data['new_password'] != data['new_password2']:
+            raise serializers.ValidationError('Hasła nie są identyczne')
+        return data  

@@ -7,137 +7,29 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate, get_user_model
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiParameter, OpenApiExample
 from .models import FriendRequest, Notification, CustomUser as User, Friendship
-from .serializers import UserSerializer, FriendRequestSerializer, NotificationSerializer, FriendSerializer
+from .serializers import UserSerializer, FriendRequestSerializer, NotificationSerializer, FriendSerializer, LoginSerializer, FriendshipStatusSerializer
 from rest_framework import serializers
 from django.shortcuts import get_object_or_404
 import logging
 from django.db.models import Q
+from .docs import LOGIN_DOCS, REGISTER_DOCS, LOGOUT_DOCS, SEND_FRIEND_REQUEST_DOCS, ACCEPT_FRIEND_REQUEST_DOCS, PASSWORD_RESET_DOCS, PASSWORD_RESET_CONFIRM_DOCS, NOTIFICATION_LIST_DOCS, USER_LIST_DOCS, USER_RETRIEVE_DOCS, PENDING_REQUESTS_DOCS, REJECT_FRIEND_REQUEST_DOCS, ME_DOCS, GET_FRIEND_REQUEST_DOCS, GET_FRIENDS_DOCS, FRIENDSHIP_STATUS_DOCS, MARK_READ_DOCS, MARK_ALL_READ_DOCS, UNREAD_COUNT_DOCS
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
+    serializer_class = LoginSerializer
 
-    @extend_schema(
-        summary="Logowanie użytkownika",
-        description="Loguje użytkownika i zwraca tokeny JWT oraz dane użytkownika",
-        request={
-            'application/json': {
-                'type': 'object',
-                'properties': {
-                    'email': {'type': 'string', 'format': 'email'},
-                    'password': {'type': 'string'},
-                },
-                'required': ['email', 'password']
-            }
-        },
-        responses={
-            200: OpenApiResponse(
-                description="Pomyślne logowanie",
-                response={
-                    'type': 'object',
-                    'properties': {
-                        'tokens': {
-                            'type': 'object',
-                            'properties': {
-                                'access': {'type': 'string'},
-                                'refresh': {'type': 'string'},
-                            }
-                        },
-                        'user': {
-                            'type': 'object',
-                            'properties': {
-                                'id': {'type': 'integer'},
-                                'email': {'type': 'string'},
-                                'username': {'type': 'string'},
-                                'avatar': {'type': 'string', 'nullable': True},
-                                'status': {'type': 'string', 'nullable': True},
-                            }
-                        }
-                    }
-                }
-            ),
-            400: OpenApiResponse(description="Błędne dane logowania"),
-            401: OpenApiResponse(description="Nieprawidłowe dane uwierzytelniające")
-        }
-    )
+    @extend_schema(**LOGIN_DOCS)
     def post(self, request):
-        email = request.data.get('email')
-        password = request.data.get('password')
-
-        if not email or not password:
-            return Response(
-                {'error': 'Proszę podać email i hasło'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        user = authenticate(email=email, password=password)
-
-        # Dodajmy debugging
-        print("Authenticating user:", email)
-        print("User authenticated:", user is not None)
-
-        if not user:
-            return Response(
-                {'error': 'Nieprawidłowy email lub hasło'},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
-        print("User data:", {
-            'id': user.id,
-            'email': user.email,
-            'username': getattr(user, 'username', None),
-            'avatar': getattr(user, 'avatar', None),
-            'status': getattr(user, 'status', None),
-            'bio': getattr(user, 'bio', None),
-            'is_online': getattr(user, 'is_online', None),
-        })
-
-        refresh = RefreshToken.for_user(user)
-        response_data = {
-            'tokens': {
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
-            },
-            'user': {
-                'id': user.id,
-                'email': user.email,
-                'username': user.username or user.email.split('@')[0],
-                'avatar': user.avatar.url if getattr(user, 'avatar', None) else None,
-                'status': getattr(user, 'status', None),
-                'bio': getattr(user, 'bio', None),
-                'is_online': getattr(user, 'is_online', False),
-                'is_staff': user.is_staff
-            }
-        }
-
-        # Debug response
-        print("Response data:", response_data)
-
-        return Response(response_data)
-
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(serializer.validated_data)
 class RegisterView(APIView):
     permission_classes = [AllowAny]
 
-    @extend_schema(
-        summary="Rejestracja użytkownika",
-        description="Tworzy nowe konto użytkownika",
-        request={
-            'application/json': {
-                'type': 'object',
-                'properties': {
-                    'email': {'type': 'string', 'format': 'email'},
-                    'password': {'type': 'string'},
-                    'password2': {'type': 'string'},
-                },
-                'required': ['email', 'password', 'password2']
-            }
-        },
-        responses={
-            201: OpenApiResponse(description="Użytkownik został utworzony"),
-            400: OpenApiResponse(description="Błędne dane rejestracji")
-        }
-    )
+    @extend_schema(**REGISTER_DOCS)
     def post(self, request):
         serializer = UserSerializer(data=request.data)
         if serializer.is_valid():
@@ -155,15 +47,7 @@ class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
     serializer_class = LogoutSerializer
 
-    @extend_schema(
-        summary="Wylogowanie użytkownika",
-        description="Wylogowuje użytkownika i unieważnia token",
-        request=LogoutSerializer,
-        responses={
-            200: OpenApiResponse(description="Pomyślne wylogowanie"),
-            400: OpenApiResponse(description="Błąd wylogowania")
-        }
-    )
+    @extend_schema(**LOGOUT_DOCS)
     def post(self, request):
         try:
             refresh_token = request.data.get('refresh_token')
@@ -181,60 +65,15 @@ class UserViewSet(viewsets.ModelViewSet):
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(
-        summary="Lista użytkowników",
-        description="Zwraca listę wszystkich użytkowników"
-    )
+    @extend_schema(**USER_LIST_DOCS)
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
-    @extend_schema(
-        summary="Szczegóły użytkownika",
-        description="Zwraca szczegółowe informacje o użytkowniku"
-    )
+    @extend_schema(**USER_RETRIEVE_DOCS)
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
 
-    @extend_schema(
-        summary="Wysyłanie zaproszenia do znajomych",
-        description="Wysyła zaproszenie do znajomych do wybranego użytkownika",
-        parameters=[
-            OpenApiParameter(
-                name="id",
-                type=int,
-                location=OpenApiParameter.PATH,
-                description="ID użytkownika, do którego wysyłamy zaproszenie"
-            ),
-        ],
-        request=None,  # Nie potrzebujemy body w request
-        responses={
-            200: OpenApiResponse(
-                description="Zaproszenie wysłane",
-                response={
-                    'type': 'object',
-                    'properties': {
-                        'message': {
-                            'type': 'string',
-                            'example': 'Zaproszenie wysłane'
-                        }
-                    }
-                }
-            ),
-            400: OpenApiResponse(
-                description="Błąd wysyłania zaproszenia",
-                response={
-                    'type': 'object',
-                    'properties': {
-                        'error': {
-                            'type': 'string',
-                            'example': 'Nie możesz wysłać zaproszenia do samego siebie'
-                        }
-                    }
-                }
-            ),
-            404: OpenApiResponse(description="Użytkownik nie znaleziony")
-        }
-    )
+    @extend_schema(**SEND_FRIEND_REQUEST_DOCS)
     @action(detail=True, methods=['POST'], url_path='send-friend-request')
     def send_friend_request(self, request, pk=None):
         receiver = self.get_object()
@@ -250,10 +89,7 @@ class UserViewSet(viewsets.ModelViewSet):
         friend_request.create_notification()  # Automatycznie tworzy notyfikację
         return Response({'message': 'Zaproszenie wysłane'})
 
-    @extend_schema(
-        summary="Oczekujące zaproszenia",
-        description="Zwraca listę oczekujących zaproszeń do znajomych"
-    )
+    @extend_schema(**PENDING_REQUESTS_DOCS)
     @action(detail=False, methods=['GET'], url_path='pending-requests')
     def pending_requests(self, request):
         pending_requests = FriendRequest.objects.filter(
@@ -263,55 +99,7 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = FriendRequestSerializer(pending_requests, many=True)
         return Response(serializer.data)
 
-    @extend_schema(
-        summary="Akceptacja zaproszenia",
-        description="Akceptuje zaproszenie do znajomych od wybranego użytkownika",
-        parameters=[
-            OpenApiParameter(
-                name="pk",
-                type=int,
-                location=OpenApiParameter.PATH,
-                description="ID użytkownika, którego zaproszenie akceptujemy"
-            ),
-        ],
-        responses={
-            200: OpenApiResponse(
-                description="Zaproszenie zaakceptowane",
-                response={
-                    'type': 'object',
-                    'properties': {
-                        'message': {
-                            'type': 'string',
-                            'example': 'Zaproszenie zaakceptowane'
-                        }
-                    }
-                }
-            ),
-            404: OpenApiResponse(
-                description="Nie znaleziono zaproszenia",
-                response={
-                    'type': 'object',
-                    'properties': {
-                        'error': {
-                            'type': 'string',
-                            'example': 'Nie znaleziono oczekującego zaproszenia'
-                        }
-                    }
-                }
-            ),
-            400: OpenApiResponse(
-                description="Błąd podczas akceptacji zaproszenia",
-                response={
-                    'type': 'object',
-                    'properties': {
-                        'error': {
-                            'type': 'string'
-                        }
-                    }
-                }
-            )
-        }
-    )
+    @extend_schema(**ACCEPT_FRIEND_REQUEST_DOCS)
     @action(detail=True, methods=['POST'], url_path='accept-friend-request')
     def accept_friend_request(self, request, pk=None):
         try:
@@ -347,10 +135,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-    @extend_schema(
-        summary="Odrzucenie zaproszenia",
-        description="Odrzuca zaproszenie do znajomych"
-    )
+    @extend_schema(**REJECT_FRIEND_REQUEST_DOCS)
     @action(detail=True, methods=['POST'], url_path='reject-friend-request')
     def reject_friend_request(self, request, pk=None):
         try:
@@ -394,14 +179,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-    @extend_schema(
-        summary="Dane zalogowanego użytkownika",
-        description="Zwraca szczegółowe informacje o zalogowanym użytkowniku",
-        responses={
-            200: UserSerializer,
-            401: OpenApiResponse(description="Brak autoryzacji")
-        }
-    )
+    @extend_schema(**ME_DOCS)
     @action(detail=False, methods=['GET'])
     def me(self, request):
         """
@@ -410,14 +188,7 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(request.user)
         return Response(serializer.data)
 
-    @extend_schema(
-        summary="Sprawdź pojedyncze zaproszenie",
-        description="Zwraca szczegóły konkretnego zaproszenia do znajomych",
-        responses={
-            200: FriendRequestSerializer,
-            404: OpenApiResponse(description="Nie znaleziono zaproszenia")
-        }
-    )
+    @extend_schema(**GET_FRIEND_REQUEST_DOCS)
     @action(detail=True, methods=['GET'], url_path='friend-request')
     def get_friend_request(self, request, pk=None):
         other_user = self.get_object()
@@ -437,10 +208,7 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = FriendRequestSerializer(friend_request)
         return Response(serializer.data)
 
-    @extend_schema(
-        summary="Lista znajomych użytkownika",
-        description="Zwraca listę aktywnych znajomych użytkownika"
-    )
+    @extend_schema(**GET_FRIENDS_DOCS)
     @action(detail=True, methods=['GET'], url_path='friends')
     def get_friends(self, request, pk=None):
         user = self.get_object()
@@ -448,55 +216,25 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = FriendSerializer(friends, many=True)
         return Response(serializer.data)
 
-    @extend_schema(
-        summary="Szczegóły znajomości",
-        description="Zwraca szczegóły relacji znajomości między dwoma użytkownikami"
-    )
-    @action(detail=True, methods=['GET'], url_path='friends')
+    @extend_schema(**FRIENDSHIP_STATUS_DOCS)
+    @action(detail=True, methods=['GET'], url_path='friendship-status')
     def get_friendship_status(self, request, pk=None):
         other_user = self.get_object()
-        
         try:
             friendship = Friendship.objects.get(
                 user=request.user,
                 friend=other_user
             )
-            
-            return Response({
-                'status': friendship.status,
-                'since': friendship.created_at,
-                'last_updated': friendship.updated_at,
-                'is_blocked': friendship.status == 'blocked',
-                'blocked_by': friendship.blocked_by.id if friendship.blocked_by else None
-            })
         except Friendship.DoesNotExist:
-            return Response({
-                'status': 'not_friends',
-                'is_blocked': False
-            })
+            friendship = None
+        
+        serializer = FriendshipStatusSerializer(friendship)
+        return Response(serializer.data)
 
 class PasswordResetView(APIView):
     permission_classes = [AllowAny]
 
-    @extend_schema(
-        summary="Żądanie resetowania hasła",
-        description="Wysyła email z linkiem do resetowania hasła",
-        request={
-            'application/json': {
-                'type': 'object',
-                'properties': {
-                    'email': {'type': 'string', 'format': 'email'},
-                },
-                'required': ['email']
-            }
-        },
-        responses={
-            200: OpenApiResponse(
-                description="Email z linkiem do resetowania hasła został wysłany"
-            ),
-            400: OpenApiResponse(description="Błędny email")
-        }
-    )
+    @extend_schema(**PASSWORD_RESET_DOCS)
     def post(self, request):
         serializer = PasswordResetSerializer(data=request.data)
         if serializer.is_valid():
@@ -509,27 +247,7 @@ class PasswordResetView(APIView):
 class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
 
-    @extend_schema(
-        summary="Potwierdzenie resetowania hasła",
-        description="Ustawia nowe hasło po resetowaniu",
-        request={
-            'application/json': {
-                'type': 'object',
-                'properties': {
-                    'token': {'type': 'string'},
-                    'uidb64': {'type': 'string'},
-                    'password': {'type': 'string'},
-                    'password2': {'type': 'string'},
-                },
-                'required': ['token', 'uidb64', 'password', 'password2']
-            }
-        },
-        responses={
-            200: OpenApiResponse(description="Hasło zostało zmienione"),
-            400: OpenApiResponse(description="Błędne dane"),
-            404: OpenApiResponse(description="Nieprawidłowy token lub użytkownik")
-        }
-    )
+    @extend_schema(**PASSWORD_RESET_CONFIRM_DOCS)
     def post(self, request):
         serializer = PasswordResetConfirmSerializer(data=request.data)
         if serializer.is_valid():
@@ -547,32 +265,13 @@ class NotificationViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return Notification.objects.filter(recipient=self.request.user)
 
-    @extend_schema(
-        summary="Lista notyfikacji",
-        description="Zwraca listę notyfikacji dla zalogowanego użytkownika",
-        parameters=[
-            OpenApiParameter(
-                name="id",
-                type=int,
-                location=OpenApiParameter.PATH,
-                required=True,
-                description="ID notyfikacji"
-            ),
-        ],
-        responses={
-            200: NotificationSerializer(many=True),
-            401: OpenApiResponse(description="Brak autoryzacji")
-        }
-    )
+    @extend_schema(**NOTIFICATION_LIST_DOCS)
     def list(self, request):
         notifications = self.get_queryset()
         serializer = self.get_serializer(notifications, many=True)
         return Response(serializer.data)
 
-    @extend_schema(
-        summary="Oznacz jako przeczytane",
-        description="Oznacza notyfikację jako przeczytaną"
-    )
+    @extend_schema(**MARK_READ_DOCS)
     @action(detail=True, methods=['POST'], url_path='mark-read')
     def mark_read(self, request, pk=None):
         notification = self.get_object()
@@ -580,19 +279,13 @@ class NotificationViewSet(viewsets.ModelViewSet):
         notification.save()
         return Response({'status': 'ok'})
 
-    @extend_schema(
-        summary="Oznacz wszystkie jako przeczytane",
-        description="Oznacza wszystkie notyfikacje jako przeczytane"
-    )
+    @extend_schema(**MARK_ALL_READ_DOCS)
     @action(detail=False, methods=['POST'], url_path='mark-all-read')
     def mark_all_read(self, request):
         self.get_queryset().update(is_read=True)
         return Response({'status': 'ok'})
 
-    @extend_schema(
-        summary="Liczba nieprzeczytanych",
-        description="Zwraca liczbę nieprzeczytanych notyfikacji"
-    )
+    @extend_schema(**UNREAD_COUNT_DOCS)
     @action(detail=False, methods=['GET'], url_path='unread-count')
     def unread_count(self, request):
         count = self.get_queryset().filter(is_read=False).count()
