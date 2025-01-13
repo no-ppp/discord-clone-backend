@@ -48,6 +48,53 @@ class CustomUser(AbstractUser):
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
 
+    STATUS_CHOICES = [
+        ('online', 'Online'),
+        ('offline', 'Offline'),
+        ('busy', 'Busy'),
+        ('away', 'Away')
+    ]
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='offline'
+    )
+    is_online = models.BooleanField(default=False)
+    last_online = models.DateTimeField(default=timezone.now)
+
+    def set_status(self, status):
+        """Ustawia status użytkownika"""
+        if status in dict(self.STATUS_CHOICES):
+            self.status = status
+            if status == 'online':
+                self.is_online = True
+            elif status == 'offline':
+                self.is_online = False
+            self.save(update_fields=['status', 'is_online', 'last_online'])
+
+    def go_online(self):
+        """Ustawia użytkownika jako online"""
+        self.set_status('online')
+        self.last_online = timezone.now()
+        self.is_online = True
+        self.save(update_fields=['status', 'is_online', 'last_online'])
+
+    def go_offline(self):
+        """Ustawia użytkownika jako offline"""
+        self.set_status('offline')
+        self.is_online = False
+        self.last_online = timezone.now()
+        self.save(update_fields=['status', 'is_online', 'last_online'])
+
+    def set_busy(self):
+        """Ustawia status jako zajęty"""
+        self.set_status('busy')
+
+    def set_away(self):
+        """Ustawia status jako away"""
+        self.set_status('away')
+
     def __str__(self):
         return self.email
 
@@ -121,8 +168,11 @@ class Friendship(models.Model):
     def get_friends(cls, user):
         """Zwraca aktywnych znajomych użytkownika"""
         return CustomUser.objects.filter(
-            friend_friendships__user=user,
-            friend_friendships__status='active'
+            friendships__friend=user,
+            friendships__status='active'
+        ).only(
+            'id', 'email', 'username', 'avatar', 
+            'status', 'is_online', 'last_online'
         )
 
     @classmethod

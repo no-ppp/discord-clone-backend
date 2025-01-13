@@ -4,9 +4,10 @@ from .models import FriendRequest, Notification, Friendship
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
 from rest_framework.authtoken.serializers import AuthTokenSerializer
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from drf_spectacular.utils import extend_schema_field
 from django.db.models import CharField
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
 User = get_user_model()
 
@@ -88,26 +89,18 @@ class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
 
-    def validate(self, attrs):
-        email = attrs.get('email')
-        password = attrs.get('password')
-
-        if not email or not password:
-            raise serializers.ValidationError('Musisz podać email i hasło.')
-
+    def validate(self, data):
+        email = data.get('email')
+        password = data.get('password')
+        
         user = authenticate(email=email, password=password)
-
+        
         if not user:
             raise serializers.ValidationError('Nieprawidłowy email lub hasło.')
-
-        # Generuj tokeny
-        refresh = RefreshToken.for_user(user)
         
-        # Aktualizuj status online
-        user.is_online = True
-        user.save(update_fields=['is_online'])
-
-        # Przygotuj dane odpowiedzi
+        user.go_online()
+        
+        refresh = RefreshToken.for_user(user)
         return {
             'tokens': {
                 'refresh': str(refresh),
@@ -119,11 +112,10 @@ class LoginSerializer(serializers.Serializer):
                 'username': user.username or user.email.split('@')[0],
                 'avatar': user.avatar.url if user.avatar else None,
                 'status': user.status,
-                'bio': getattr(user, 'bio', None),
                 'is_online': True,
-                'is_staff': user.is_staff
+                'last_online': user.last_online
             }
-        }  
+        }
 
 class FriendshipStatusSerializer(serializers.Serializer):
     status = serializers.CharField()
@@ -151,11 +143,32 @@ class LogoutSerializer(serializers.Serializer):
 
     def validate(self, data):
         try:
-            token = RefreshToken(data['refresh_token'])
-            token.blacklist()
-            return data
-        except Exception:
-            raise serializers.ValidationError('Nieprawidłowy token')  
+            refresh_token = data.get('refresh_token')
+            print(f"Próba walidacji tokenu: {refresh_token[:20]}...") # Debug
+            
+            try:
+                token = RefreshToken(refresh_token)
+                # Pobierz użytkownika
+                user_id = token.payload.get('user_id')
+                user = User.objects.get(id=user_id)
+                print(f"Token poprawny, użytkownik: {user.email}") # Debug
+                
+                # Ustaw status offline
+                user.go_offline()
+                user.save()
+                
+                return data
+                
+            except TokenError as e:
+                print(f"Błąd tokenu: {str(e)}") # Debug
+                raise serializers.ValidationError("Nieprawidłowy token")
+            except User.DoesNotExist:
+                print("Nie znaleziono użytkownika") # Debug
+                raise serializers.ValidationError("Nie znaleziono użytkownika")
+                
+        except Exception as e:
+            print(f"Inny błąd: {str(e)}") # Debug
+            raise serializers.ValidationError(str(e))
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
     token = serializers.CharField()

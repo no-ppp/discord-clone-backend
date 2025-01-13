@@ -324,3 +324,31 @@ USER_CHANGE_PASSWORD_DOCS = {
     'summary': "Zmiana hasła",
     'description': "Zmienia hasło zalogowanego użytkownika"
 }
+
+UPDATE_STATUS_DOCS = {
+    'summary': "Aktualizacja statusu użytkownika",
+    'description': "Zmienia status użytkownika (online/offline/busy/away)",
+    'request': {
+        'content': {
+            'application/json': {
+                'example': {
+                    'status': 'online'
+                }
+            }
+        }
+    },
+    'responses': {
+        200: OpenApiResponse(
+            description="Status został zaktualizowany",
+            response={
+                'type': 'object',
+                'properties': {
+                    'status': {'type': 'string'},
+                    'is_online': {'type': 'boolean'},
+                    'last_online': {'type': 'string', 'format': 'date-time'}
+                }
+            }
+        ),
+        400: OpenApiResponse(description="Nieprawidłowy status")
+    }
+}

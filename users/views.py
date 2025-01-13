@@ -7,12 +7,12 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate, get_user_model
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiParameter, OpenApiExample
 from .models import FriendRequest, Notification, CustomUser as User, Friendship
-from .serializers import UserSerializer, FriendRequestSerializer, NotificationSerializer, FriendSerializer, LoginSerializer, FriendshipStatusSerializer
+from .serializers import UserSerializer, FriendRequestSerializer, NotificationSerializer, FriendSerializer, LoginSerializer, FriendshipStatusSerializer, LogoutSerializer
 from rest_framework import serializers
 from django.shortcuts import get_object_or_404
 import logging
 from django.db.models import Q
-from .docs import LOGIN_DOCS, REGISTER_DOCS, LOGOUT_DOCS, SEND_FRIEND_REQUEST_DOCS, ACCEPT_FRIEND_REQUEST_DOCS, PASSWORD_RESET_DOCS, PASSWORD_RESET_CONFIRM_DOCS, NOTIFICATION_LIST_DOCS, USER_LIST_DOCS, USER_RETRIEVE_DOCS, PENDING_REQUESTS_DOCS, REJECT_FRIEND_REQUEST_DOCS, ME_DOCS, GET_FRIEND_REQUEST_DOCS, GET_FRIENDS_DOCS, FRIENDSHIP_STATUS_DOCS, MARK_READ_DOCS, MARK_ALL_READ_DOCS, UNREAD_COUNT_DOCS
+from .docs import LOGIN_DOCS, REGISTER_DOCS, LOGOUT_DOCS, SEND_FRIEND_REQUEST_DOCS, ACCEPT_FRIEND_REQUEST_DOCS, PASSWORD_RESET_DOCS, PASSWORD_RESET_CONFIRM_DOCS, NOTIFICATION_LIST_DOCS, USER_LIST_DOCS, USER_RETRIEVE_DOCS, PENDING_REQUESTS_DOCS, REJECT_FRIEND_REQUEST_DOCS, ME_DOCS, GET_FRIEND_REQUEST_DOCS, GET_FRIENDS_DOCS, FRIENDSHIP_STATUS_DOCS, MARK_READ_DOCS, MARK_ALL_READ_DOCS, UNREAD_COUNT_DOCS, UPDATE_STATUS_DOCS
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -40,24 +40,34 @@ class RegisterView(APIView):
             )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class LogoutSerializer(serializers.Serializer):
-    refresh_token = serializers.CharField()
 
 class LogoutView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
     serializer_class = LogoutSerializer
 
     @extend_schema(**LOGOUT_DOCS)
     def post(self, request):
+        print("Received logout request")
+        print("Request data:", request.data)
+        
+        serializer = self.serializer_class(data=request.data)
+        
         try:
-            refresh_token = request.data.get('refresh_token')
-            token = RefreshToken(refresh_token)
-            token.blacklist()
-            return Response({'message': 'Pomyślnie wylogowano'})
-        except Exception:
+            if serializer.is_valid():
+                print("Serializer valid")
+                return Response({"message": "Successfully logged out"}, status=status.HTTP_200_OK)
+            else:
+                print("Serializer errors:", serializer.errors)
+                # Zawsze wyloguj użytkownika lokalnie, nawet jeśli token jest nieprawidłowy
+                return Response(
+                    {"message": "Logged out locally", "errors": serializer.errors}, 
+                    status=status.HTTP_200_OK  # Zmieniamy na 200 OK
+                )
+        except Exception as e:
+            print("Unexpected error:", str(e))
             return Response(
-                {'error': 'Błąd wylogowania'},
-                status=status.HTTP_400_BAD_REQUEST
+                {"message": "Logged out locally", "error": str(e)},
+                status=status.HTTP_200_OK  # Zmieniamy na 200 OK
             )
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -215,6 +225,7 @@ class UserViewSet(viewsets.ModelViewSet):
         friends = Friendship.get_friends(user)
         serializer = FriendSerializer(friends, many=True)
         return Response(serializer.data)
+    
 
     @extend_schema(**FRIENDSHIP_STATUS_DOCS)
     @action(detail=True, methods=['GET'], url_path='friendship-status')
@@ -230,6 +241,25 @@ class UserViewSet(viewsets.ModelViewSet):
         
         serializer = FriendshipStatusSerializer(friendship)
         return Response(serializer.data)
+
+    @extend_schema(**UPDATE_STATUS_DOCS)
+    @action(detail=True, methods=['POST'], url_path='update-status')
+    def update_status(self, request, pk=None):
+        user = self.get_object()
+        status = request.data.get('status')
+        
+        if status not in dict(CustomUser.STATUS_CHOICES):
+            return Response(
+                {'error': 'Invalid status'},
+                status=400
+            )
+
+        user.set_status(status)
+        return Response({
+            'status': user.status,
+            'is_online': user.is_online,
+            'last_online': user.last_online
+        })
 
 class PasswordResetView(APIView):
     permission_classes = [AllowAny]
