@@ -2,7 +2,7 @@ from rest_framework import status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate, get_user_model
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiParameter, OpenApiExample
@@ -12,7 +12,7 @@ from rest_framework import serializers
 from django.shortcuts import get_object_or_404
 import logging
 from django.db.models import Q
-from .docs import LOGIN_DOCS, REGISTER_DOCS, LOGOUT_DOCS, SEND_FRIEND_REQUEST_DOCS, ACCEPT_FRIEND_REQUEST_DOCS, PASSWORD_RESET_DOCS, PASSWORD_RESET_CONFIRM_DOCS, NOTIFICATION_LIST_DOCS, USER_LIST_DOCS, USER_RETRIEVE_DOCS, PENDING_REQUESTS_DOCS, REJECT_FRIEND_REQUEST_DOCS, ME_DOCS, GET_FRIEND_REQUEST_DOCS, GET_FRIENDS_DOCS, FRIENDSHIP_STATUS_DOCS, MARK_READ_DOCS, MARK_ALL_READ_DOCS, UNREAD_COUNT_DOCS, UPDATE_STATUS_DOCS
+from .docs import LOGIN_DOCS, REGISTER_DOCS, LOGOUT_DOCS, SEND_FRIEND_REQUEST_DOCS, ACCEPT_FRIEND_REQUEST_DOCS, PASSWORD_RESET_DOCS, PASSWORD_RESET_CONFIRM_DOCS, NOTIFICATION_LIST_DOCS, USER_LIST_DOCS, USER_RETRIEVE_DOCS, PENDING_REQUESTS_DOCS, REJECT_FRIEND_REQUEST_DOCS, ME_DOCS, GET_FRIEND_REQUEST_DOCS, GET_FRIENDS_DOCS, FRIENDSHIP_STATUS_DOCS, MARK_READ_DOCS, MARK_ALL_READ_DOCS, UNREAD_COUNT_DOCS, UPDATE_STATUS_DOCS, REMOVE_FRIEND_DOCS
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -248,7 +248,7 @@ class UserViewSet(viewsets.ModelViewSet):
         user = self.get_object()
         status = request.data.get('status')
         
-        if status not in dict(CustomUser.STATUS_CHOICES):
+        if status not in dict(User.STATUS_CHOICES):
             return Response(
                 {'error': 'Invalid status'},
                 status=400
@@ -260,6 +260,21 @@ class UserViewSet(viewsets.ModelViewSet):
             'is_online': user.is_online,
             'last_online': user.last_online
         })
+    
+    @extend_schema(**REMOVE_FRIEND_DOCS)
+    @action(detail=True, methods=['POST'], url_path='remove-friend')
+    def remove_friend(self, request, pk=None):
+        """Usuwa użytkownika ze znajomych"""
+        user_to_remove = self.get_object()
+        
+        # Usuń relację w obie strony
+        Friendship.objects.filter(
+            (Q(user=request.user, friend=user_to_remove) |
+             Q(user=user_to_remove, friend=request.user)),
+            status='active'
+        ).delete()
+        
+        return Response({"message": "Friend removed successfully"}, status=status.HTTP_200_OK)
 
 class PasswordResetView(APIView):
     permission_classes = [AllowAny]
@@ -320,3 +335,4 @@ class NotificationViewSet(viewsets.ModelViewSet):
     def unread_count(self, request):
         count = self.get_queryset().filter(is_read=False).count()
         return Response({'count': count})
+

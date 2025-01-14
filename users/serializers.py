@@ -22,7 +22,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
 class UserSerializer(BaseUserSerializer):
     class Meta:
         model = User
-        fields = ['id', 'email', 'username', 'avatar', 'status', 'is_online']
+        fields = ['id', 'email', 'username','bio', 'avatar', 'status', 'is_online']
         read_only_fields = ['id', 'email']
 
 # Serializer do rejestracji
@@ -97,8 +97,6 @@ class LoginSerializer(serializers.Serializer):
         
         if not user:
             raise serializers.ValidationError('Nieprawidłowy email lub hasło.')
-        
-        user.go_online()
         
         refresh = RefreshToken.for_user(user)
         return {

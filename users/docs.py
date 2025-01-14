@@ -1,4 +1,4 @@
-from drf_spectacular.utils import OpenApiResponse, OpenApiParameter
+from drf_spectacular.utils import OpenApiResponse, OpenApiParameter, extend_schema
 from .serializers import UserSerializer, FriendRequestSerializer
 
 # Już istniejąca dokumentacja logowania
@@ -350,5 +350,30 @@ UPDATE_STATUS_DOCS = {
             }
         ),
         400: OpenApiResponse(description="Nieprawidłowy status")
+    }
+}
+
+REMOVE_FRIEND_DOCS = {
+    'summary': 'Usuń znajomego',
+    'description': 'Usuwa użytkownika z listy znajomych',
+    'responses': {
+        200: OpenApiResponse(
+            description="Znajomy został usunięty pomyślnie",
+            response={
+                'type': 'object',
+                'properties': {
+                    'message': {
+                        'type': 'string',
+                        'example': 'Friend removed successfully'
+                    }
+                }
+            }
+        ),
+        404: OpenApiResponse(
+            description="Użytkownik nie został znaleziony"
+        ),
+        400: OpenApiResponse(
+            description="Błędne żądanie"
+        )
     }
 }

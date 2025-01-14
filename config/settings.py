@@ -32,6 +32,7 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -47,12 +48,14 @@ INSTALLED_APPS = [
     'channels',
     'rest_framework_simplejwt',
     'drf_spectacular',
+    'channels_redis',
     
     # local apps
     'users',
     'chat_rooms',
     'notifications',
     'messages_api',
+    'websockets',
     
     
 ]
