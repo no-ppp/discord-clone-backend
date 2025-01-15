@@ -1,35 +1,79 @@
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
-from django.contrib.auth import get_user_model
+from django.core.cache import cache
 import json
-
-User = get_user_model()
+import redis
 
 class MainConsumer(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.subscription = set()
-    
+        self.redis_client = redis.Redis(host='127.0.0.1', port=6379, db=1)
+
     async def connect(self):
         self.user = self.scope['user']
         if not self.user.is_authenticated:
             await self.close()
             return
+            
         await self.accept()
-        await database_sync_to_async(self.user.go_online)()
+        
+        # Dodaj użytkownika do Redis
+        await database_sync_to_async(self.add_user_to_group)()
+        
+        # Pobierz aktualnych użytkowników
+        current_users = await database_sync_to_async(self.get_group_users)()
+        
         await self.channel_layer.group_add('status_updates', self.channel_name)
-        await self.send(json.dumps({
-            'type': 'status_update',
-            'status': 'online',
-            'user_id': self.user.id,
+        await database_sync_to_async(self.user.go_online)()
+        
+        # Wyślij listę użytkowników
+        await self.send(text_data=json.dumps({
+            'type': 'group_users',
+            'users': list(current_users)
         }))
+        
+        # Broadcast nowego statusu
+        await self.channel_layer.group_send(
+            'status_updates',
+            {
+                'type': 'broadcast_status',
+                'user_id': self.user.id,
+                'status': 'online'
+            }
+        )
+
+    def add_user_to_group(self):
+        self.redis_client.sadd('group_users', self.user.id)
     
+    def get_group_users(self):
+        users = self.redis_client.smembers('group_users')
+        return [int(user_id) for user_id in users]  # Konwertuj bytes na int
+    
+    def remove_user_from_group(self):
+        self.redis_client.srem('group_users', self.user.id)
+
     async def disconnect(self, close_code):
-        await database_sync_to_async(self.user.go_offline)()
+        if hasattr(self, 'user') and self.user.is_authenticated:
+            await database_sync_to_async(self.remove_user_from_group)()
+            await database_sync_to_async(self.user.go_offline)()
+            await self.channel_layer.group_send(
+                'status_updates',
+                {
+                    'type': 'broadcast_status',
+                    'user_id': self.user.id,
+                    'status': 'offline'
+                }
+            )
         await self.channel_layer.group_discard('status_updates', self.channel_name)
-        await self.send(json.dumps({
+
+    # Dodajemy handler dla broadcast_status
+    async def broadcast_status(self, event):
+        """
+        Handler dla wiadomości typu broadcast_status.
+        Wysyła wiadomość do klienta WebSocket.
+        """
+        await self.send(text_data=json.dumps({
             'type': 'status_update',
-            'status': 'offline',
-            'user_id': self.user.id,
+            'user_id': event['user_id'],
+            'status': event['status']
         }))
-        await self.close()
