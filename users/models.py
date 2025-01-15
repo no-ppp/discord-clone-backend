@@ -64,28 +64,19 @@ class CustomUser(AbstractUser):
     last_online = models.DateTimeField(default=timezone.now)
 
     def set_status(self, status):
-        """Ustawia status użytkownika"""
         if status in dict(self.STATUS_CHOICES):
             self.status = status
-            if status == 'online':
-                self.is_online = True
-            elif status == 'offline':
-                self.is_online = False
+            self.is_online = (status == 'online')
+            self.last_online = timezone.now()
             self.save(update_fields=['status', 'is_online', 'last_online'])
 
     def go_online(self):
         """Ustawia użytkownika jako online"""
         self.set_status('online')
-        self.last_online = timezone.now()
-        self.is_online = True
-        self.save(update_fields=['status', 'is_online', 'last_online'])
 
     def go_offline(self):
         """Ustawia użytkownika jako offline"""
         self.set_status('offline')
-        self.is_online = False
-        self.last_online = timezone.now()
-        self.save(update_fields=['status', 'is_online', 'last_online'])
 
     def set_busy(self):
         """Ustawia status jako zajęty"""

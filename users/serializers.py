@@ -151,8 +151,6 @@ class LogoutSerializer(serializers.Serializer):
                 user = User.objects.get(id=user_id)
                 print(f"Token poprawny, użytkownik: {user.email}") # Debug
                 
-                # Ustaw status offline
-                user.go_offline()
                 user.save()
                 
                 return data

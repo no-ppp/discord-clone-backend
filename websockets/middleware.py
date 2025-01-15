@@ -7,27 +7,29 @@ from urllib.parse import parse_qs
 
 User = get_user_model()
 
-@database_sync_to_async
-def get_user(token_key):
-    try:
-        access_token = AccessToken(token_key)
-        user = User.objects.get(id=access_token['user_id'])
-        return user
-    except Exception as e:
-        return AnonymousUser()
 
-class WebSocketJWTAuthMiddleware(BaseMiddleware):
+class JWTAuthenticationMiddleware(BaseMiddleware):
     async def __call__(self, scope, receive, send):
+        
+        scope['user'] = AnonymousUser()
+        
         query_string = scope.get('query_string', b'').decode()
-        query_params = parse_qs(query_string)
-        token = query_params.get('token', [None])[0]
-
+        token = None
+        if 'token=' in query_string:
+            token = query_string.split('token=')[1]
         if token:
-            user = await get_user(token)
-            scope['user'] = user
-            print(f"Authenticated user: {user}")
-        else:
-            scope['user'] = AnonymousUser()
-            print("No token provided, using AnonymousUser")
-
-        return await super().__call__(scope, receive, send) 
+            try:
+                validate_token = AccessToken(token)
+                user_id = validate_token['user_id']
+                scope['user'] = await self.get_user(user_id)
+            except:
+                pass
+            
+            return await super().__call__(scope, receive, send)
+        
+    @database_sync_to_async
+    def get_user(self, user_id):
+        try:
+            return User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return AnonymousUser()
