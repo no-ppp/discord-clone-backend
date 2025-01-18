@@ -134,10 +134,9 @@ class UserViewSet(viewsets.ModelViewSet):
             Friendship.objects.create(user=request.user, friend=sender)
             Friendship.objects.create(user=sender, friend=request.user)
             
-            # Stwórz powiadomienie
-            friend_request.create_notification()
             
-            return Response({'message': 'Zaproszenie zaakceptowane'})
+            return Response({'message': 'Zaproszenie zaakceptowane'},
+                            status=status.HTTP_200_OK)
             
         except Exception as e:
             return Response(

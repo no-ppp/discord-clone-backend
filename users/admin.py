@@ -4,7 +4,7 @@ from .models import CustomUser, Friendship, FriendRequest, Notification, UserBlo
 
 @admin.register(CustomUser)
 class CustomUserAdmin(UserAdmin):
-    list_display = ('email', 'username', 'is_staff', 'is_active', 'is_online', 'last_online')
+    list_display = ('id', 'email', 'username', 'is_staff', 'is_active', 'is_online', 'last_online')
     list_filter = ('is_staff', 'is_active', 'is_online')
     search_fields = ('email', 'username')
     ordering = ('-last_online',)
