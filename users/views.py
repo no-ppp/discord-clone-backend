@@ -6,9 +6,8 @@ from rest_framework.decorators import action, api_view
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate, get_user_model
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiParameter, OpenApiExample
-from .models import FriendRequest, Notification, CustomUser as User, Friendship
-from .serializers import UserSerializer, FriendRequestSerializer, NotificationSerializer, FriendSerializer, LoginSerializer, FriendshipStatusSerializer, LogoutSerializer
-from rest_framework import serializers
+from .models import FriendRequest, CustomUser as User, Friendship
+from .serializers import UserSerializer, FriendRequestSerializer, FriendSerializer, LoginSerializer, FriendshipStatusSerializer, LogoutSerializer
 from django.shortcuts import get_object_or_404
 import logging
 from django.db.models import Q
@@ -95,8 +94,11 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        friend_request = FriendRequest.objects.create(sender=sender, receiver=receiver)
-        friend_request.create_notification()  # Automatycznie tworzy notyfikację
+        friend_request = FriendRequest.objects.create(
+            sender=sender, 
+            receiver=receiver,
+            status=FriendRequest.PENDING
+            )
         return Response({'message': 'Zaproszenie wysłane'})
 
     @extend_schema(**PENDING_REQUESTS_DOCS)
@@ -300,38 +302,4 @@ class PasswordResetConfirmView(APIView):
                 'message': 'Hasło zostało zmienione pomyślnie'
             })
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-class NotificationViewSet(viewsets.ModelViewSet):
-    serializer_class = NotificationSerializer
-    permission_classes = [IsAuthenticated]
-    lookup_value_regex = '[0-9]+'
-
-    def get_queryset(self):
-        return Notification.objects.filter(recipient=self.request.user)
-
-    @extend_schema(**NOTIFICATION_LIST_DOCS)
-    def list(self, request):
-        notifications = self.get_queryset()
-        serializer = self.get_serializer(notifications, many=True)
-        return Response(serializer.data)
-
-    @extend_schema(**MARK_READ_DOCS)
-    @action(detail=True, methods=['POST'], url_path='mark-read')
-    def mark_read(self, request, pk=None):
-        notification = self.get_object()
-        notification.is_read = True
-        notification.save()
-        return Response({'status': 'ok'})
-
-    @extend_schema(**MARK_ALL_READ_DOCS)
-    @action(detail=False, methods=['POST'], url_path='mark-all-read')
-    def mark_all_read(self, request):
-        self.get_queryset().update(is_read=True)
-        return Response({'status': 'ok'})
-
-    @extend_schema(**UNREAD_COUNT_DOCS)
-    @action(detail=False, methods=['GET'], url_path='unread-count')
-    def unread_count(self, request):
-        count = self.get_queryset().filter(is_read=False).count()
-        return Response({'count': count})
 

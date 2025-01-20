@@ -67,15 +67,6 @@ class FriendRequestSerializer(serializers.ModelSerializer):
         fields = ['id', 'sender', 'receiver', 'status', 'created_at', 'is_read']
         read_only_fields = ['id', 'created_at']
 
-# Serializer do powiadomień
-class NotificationSerializer(serializers.ModelSerializer):
-    sender = UserSerializer(source='related_request.sender', read_only=True)
-
-    class Meta:
-        model = Notification
-        fields = ['id', 'recipient', 'text', 'is_read', 'created_at', 'sender']
-        read_only_fields = ['id', 'created_at', 'recipient', 'sender']
-
 # Serializer do resetu hasła (jeśli potrzebujesz)
 class PasswordResetSerializer(serializers.Serializer):
     email = serializers.EmailField()

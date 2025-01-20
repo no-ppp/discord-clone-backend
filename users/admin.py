@@ -55,28 +55,6 @@ class FriendRequestAdmin(admin.ModelAdmin):
         }),
     )
 
-@admin.register(Notification)
-class NotificationAdmin(admin.ModelAdmin):
-    list_display = ('recipient', 'text', 'notification_type', 'is_read', 'created_at')
-    list_filter = ('is_read', 'notification_type', 'created_at')
-    search_fields = ('recipient__email', 'text')
-    date_hierarchy = 'created_at'
-    ordering = ('-created_at',)
-    
-    readonly_fields = ('created_at',)
-    
-    fieldsets = (
-        ('Podstawowe informacje', {
-            'fields': ('recipient', 'text', 'notification_type')
-        }),
-        ('Powiązane', {
-            'fields': ('related_request',)
-        }),
-        ('Status', {
-            'fields': ('is_read', 'created_at')
-        }),
-    )
-
 @admin.register(UserBlock)
 class UserBlockAdmin(admin.ModelAdmin):
     list_display = ('user', 'blocked_user', 'created_at')

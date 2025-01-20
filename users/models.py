@@ -2,6 +2,7 @@ from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
+from notifications.models import Notification
 
 class UserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
@@ -209,65 +210,11 @@ class FriendRequest(models.Model):
         unique_together = ('sender', 'receiver')
 
     def save(self, *args, **kwargs):
-        # Najpierw zapisz, żeby utworzyć notyfikację
         super().save(*args, **kwargs)
-        
-        # Jeśli status jest accepted lub rejected, utwórz notyfikację i usuń zaproszenie
-        if self.status in [self.ACCEPTED, self.REJECTED]:
-            self.create_notification()
-            # Usuń zaproszenie po utworzeniu notyfikacji
-            self.delete()
-        elif self.status == self.PENDING:
-            # Dla nowych zaproszeń też tworzymy notyfikację
-            self.create_notification()
+        Notification.create_friend_request_notification(self)
 
     def __str__(self):
         return f"{self.sender} -> {self.receiver} ({self.status})"
-
-    def create_notification(self):
-        """Automatycznie tworzy odpowiednią notyfikację"""
-        if self.status == self.PENDING:
-            text = f"{self.sender.email} wysłał(a) Ci zaproszenie do znajomych"
-            recipient = self.receiver
-        elif self.status == self.ACCEPTED:
-            text = f"{self.receiver.email} zaakceptował(a) Twoje zaproszenie do znajomych"
-            recipient = self.sender
-        else:  # REJECTED
-            text = f"{self.receiver.email} odrzucił(a) Twoje zaproszenie do znajomych"
-            recipient = self.sender
-
-        Notification.objects.create(
-            recipient=recipient,
-            related_request=self,
-            text=text
-        )
-
-class Notification(models.Model):
-    recipient = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name='notifications'
-    )
-    related_request = models.ForeignKey(
-        FriendRequest,
-        on_delete=models.CASCADE,
-        related_name='notifications',
-        null=True,
-        blank=True
-    )
-    text = models.CharField(max_length=255)
-    is_read = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    notification_type = models.CharField(
-        max_length=50,
-        default='friend_request'
-    )
-
-    class Meta:
-        ordering = ['-created_at']
-
-    def __str__(self):
-        return f"Notyfikacja dla {self.recipient}: {self.text}"
 
 class UserBlock(models.Model):
     user = models.ForeignKey(
