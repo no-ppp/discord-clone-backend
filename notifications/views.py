@@ -13,27 +13,30 @@ class NotificationViewSet(viewsets.ModelViewSet):
     @extend_schema(**GET_NOTIFICATIONS_DOCS)
     def get_queryset(self):
         return Notification.objects.filter(
-            recipent = self.request.user
+            recipient = self.request.user
         ).order_by('-created_at')
     
     @extend_schema(**MARK_AS_READ_DOCS)
-    @action(detail=False, methods=['GET'])
+    @action(detail=True, methods=['POST'], url_path='mark-as-read')
     def mark_as_read(self, request, pk=None):
-        notification = self.get_queryset()
-        notification.is_read = True
-        notification.save()
+        notification = self.get_object()
+        if notification.auto_delete:
+            notification.delete()
+        else:
+            notification.is_read = True
+            notification.save()
         return Response(status=status.HTTP_200_OK)
 
-    @action(detail=False, methods=['GET'])
+    @action(detail=True, methods=['POST'], url_path='mark-as-read-all')
     @extend_schema(**MARK_AS_READ_ALL_DOCS)
     def mark_as_read_all(self, request):
-        notifications = self.get_queryset()
+        notifications = self.get_object()
         notifications.update(is_read=True)
         notifications.save()
         return Response(status=status.HTTP_200_OK)
     
     @extend_schema(**DELETE_NOTIFICATION_DOCS)
-    @action(detail=True, methods=['DELETE'])
+    @action(detail=True, methods=['DELETE'], url_path='delete')
     def delete_notification(self, request, pk=None):
         notification = self.get_queryset()
         notification.delete()

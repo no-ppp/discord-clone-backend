@@ -25,7 +25,7 @@ MARK_AS_READ_DOCS = {
     }
 }
 MARK_AS_READ_ALL_DOCS = {
-    'summary': 'Oznaczenie powiadomień jako przeczytane',
+    'summary': 'Oznaczenie wszystkich powiadomień jako przeczytane',
     'description': 'Oznacza wszystkie powiadomienia jako przeczytane',
     'responses': {
         '200': OpenApiResponse(description='Wszystkie powiadomienia oznaczone jako przeczytane')

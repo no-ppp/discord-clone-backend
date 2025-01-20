@@ -42,6 +42,12 @@ class MainConsumer(AsyncWebsocketConsumer):
             }
         )
 
+        # Dodaj użytkownika do grupy notyfikacji
+        await self.channel_layer.group_add(
+            f'notifications_{self.user.id}',
+            self.channel_name
+        )
+
     def add_user_to_group(self):
         self.redis_client.sadd('group_users', self.user.id)
     
@@ -64,6 +70,11 @@ class MainConsumer(AsyncWebsocketConsumer):
                     'status': 'offline'
                 }
             )
+            # Usuń użytkownika z grupy notyfikacji
+            await self.channel_layer.group_discard(
+                f'notifications_{self.user.id}',
+                self.channel_name
+            )
         await self.channel_layer.group_discard('status_updates', self.channel_name)
 
     # Dodajemy handler dla broadcast_status
@@ -76,4 +87,22 @@ class MainConsumer(AsyncWebsocketConsumer):
             'type': 'status_update',
             'user_id': event['user_id'],
             'status': event['status']
+        }))
+    
+    # Dodajemy nowy handler dla notyfikacji
+    async def send_notification(self, event):
+        """
+        Handler dla wiadomości typu notification.
+        Wysyła notyfikację do klienta WebSocket.
+        """
+        await self.send(text_data=json.dumps({
+            'type': 'notification',
+            'notification': {
+                'id': event['notification_id'],
+                'text': event['text'],
+                'sender': event['sender'],
+                'created_at': event['created_at'],
+                'notification_type': event['notification_type'],
+                'auto_delete': event['auto_delete']
+            }
         }))

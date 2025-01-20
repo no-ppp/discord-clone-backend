@@ -7,6 +7,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate, get_user_model
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiParameter, OpenApiExample
 from .models import FriendRequest, CustomUser as User, Friendship
+from notifications.models import Notification
 from .serializers import UserSerializer, FriendRequestSerializer, FriendSerializer, LoginSerializer, FriendshipStatusSerializer, LogoutSerializer
 from django.shortcuts import get_object_or_404
 import logging
@@ -85,21 +86,54 @@ class UserViewSet(viewsets.ModelViewSet):
     @extend_schema(**SEND_FRIEND_REQUEST_DOCS)
     @action(detail=True, methods=['POST'], url_path='send-friend-request')
     def send_friend_request(self, request, pk=None):
-        receiver = self.get_object()
-        sender = request.user
+        try:
+            receiver = self.get_object()
+            sender = request.user
 
-        if sender == receiver:
+            # Sprawdź czy nie wysyłasz do siebie
+            if sender == receiver:
+                return Response(
+                    {'error': 'Nie możesz wysłać zaproszenia do samego siebie'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Sprawdź czy zaproszenie już nie istnieje
+            existing_request = FriendRequest.objects.filter(
+                sender=sender,
+                receiver=receiver,
+                status=FriendRequest.PENDING
+            ).first()
+
+            if existing_request:
+                return Response(
+                    {'error': 'Zaproszenie już zostało wysłane'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Sprawdź czy nie są już znajomymi
+            if Friendship.objects.filter(user=sender, friend=receiver).exists():
+                return Response(
+                    {'error': 'Jesteście już znajomymi'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            friend_request = FriendRequest.objects.create(
+                sender=sender, 
+                receiver=receiver,
+                status=FriendRequest.PENDING
+            ) # it automatically creates notification bc
+              # of the Notification.create_friend_request_notification()
+              # method in the FriendRequest model
+
             return Response(
-                {'error': 'Nie możesz wysłać zaproszenia do samego siebie'},
+                {'message': 'Zaproszenie wysłane'},
+                status=status.HTTP_201_CREATED
+            )
+
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
-        friend_request = FriendRequest.objects.create(
-            sender=sender, 
-            receiver=receiver,
-            status=FriendRequest.PENDING
-            )
-        return Response({'message': 'Zaproszenie wysłane'})
 
     @extend_schema(**PENDING_REQUESTS_DOCS)
     @action(detail=False, methods=['GET'], url_path='pending-requests')
@@ -132,10 +166,17 @@ class UserViewSet(viewsets.ModelViewSet):
             friend_request.status = FriendRequest.ACCEPTED
             friend_request.save()
             
+            
             # Utwórz relację znajomości w obie strony
             Friendship.objects.create(user=request.user, friend=sender)
             Friendship.objects.create(user=sender, friend=request.user)
-            
+
+            Notification.objects.filter(
+                related_request=friend_request,
+                notification_type='friend_request'
+            ).delete()
+
+            Notification.create_friend_request_notification(friend_request)          
             
             return Response({'message': 'Zaproszenie zaakceptowane'},
                             status=status.HTTP_200_OK)
@@ -273,6 +314,11 @@ class UserViewSet(viewsets.ModelViewSet):
             (Q(user=request.user, friend=user_to_remove) |
              Q(user=user_to_remove, friend=request.user)),
             status='active'
+        ).delete()
+        FriendRequest.objects.filter(
+            sender=request.user,
+            receiver=user_to_remove,
+            status=FriendRequest.ACCEPTED
         ).delete()
         
         return Response({"message": "Friend removed successfully"}, status=status.HTTP_200_OK)
