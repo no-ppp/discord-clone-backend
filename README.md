@@ -113,15 +113,27 @@ The application utilizes SQLite for data storage. The primary models include:
 
 To run the backend, ensure you have Python and the necessary packages installed. Use the following commands:
 
-# Navigate to the backend directory
+#### Navigate to the backend directory
 
 cd backend
 
-Install dependencies
+#### Create virtual environment
+
+python -m venv venv
+
+#### Activate virtual environment
+
+#### On Windows
+venv\Scripts\activate
+
+#### On Linux/Mac
+source venv/bin/activate
+
+#### Install dependencies
 
 pip install -r requirements.txt
 
-Run migrations
+#### Run migrations
 python manage.py migrate
 
 Start the development server
