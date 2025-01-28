@@ -18,15 +18,18 @@ The backend of the Social Media App is developed using Django and the Django RES
 - **PostgreSQL**: A robust, open-source relational database system employed for storing user data, friend relationships, and notifications.
 
 ### Project Structure
-backend/
-├── chat/ # Functionality for chat
-├── notifications/ # System for notifications
-├── users/ # Management of users
-├── friends/ # Handling of friend requests
-├── websockets/ # Handlers for WebSocket connections
-├── settings.py # Configuration settings for Django
-├── urls.py # Routing of URLs
-└── wsgi.py # WSGI entry point for the application
+
+The project structure is organized as follows:
+
+- **backend/**
+  - **chat/**                  - Functionality for chat
+  - **notifications/**         - System for notifications
+  - **users/**                 - Management of users
+  - **friends/**               - Handling of friend requests
+  - **websockets/**            - Handlers for WebSocket connections
+  - **settings.py**            - Configuration settings for Django
+  - **urls.py**                - Routing of URLs
+  - **wsgi.py**                - WSGI entry point for the application
 
 ### API Endpoints
 
