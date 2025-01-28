@@ -20,7 +20,7 @@ The backend of the Social Media App is built using Django and Django REST Framew
 - **Django REST Framework**: Building Web APIs
 - **Django Channels**: WebSocket support
 - **Redis**: Message broker for WebSocket
-- **PostgreSQL**: Database system
+- **SQLite**: Database system
 - **JWT**: Authentication mechanism
 
 ## 📁 Project Structure
@@ -102,7 +102,7 @@ The application utilizes SQLite for data storage. The primary models include:
 ### Prerequisites
 - Python 3.8+
 - Redis
-- PostgreSQL
+- SQLite
 
 ## Installation
 
