@@ -105,7 +105,7 @@ The application utilizes SQLite for data storage. The primary models include:
 - Redis
 - PostgreSQL
 
-### Installation
+## Installation
 
 1. Clone the repository
 
@@ -115,29 +115,31 @@ To run the backend, ensure you have Python and the necessary packages installed.
 
 #### Navigate to the backend directory
 
-cd backend
+`cd backend`
 
 #### Create virtual environment
 
-python -m venv venv
+`python -m venv venv`
 
-#### Activate virtual environment
+### Activate virtual environment
 
 #### On Windows
-venv\Scripts\activate
+`venv\Scripts\activate`
 
 #### On Linux/Mac
-source venv/bin/activate
+`source venv/bin/activate`
 
-#### Install dependencies
+### Install dependencies
 
-pip install -r requirements.txt
+`pip install -r requirements.txt`
 
-#### Run migrations
-python manage.py migrate
+### Run migrations
 
-Start the development server
-python manage.py runserver
+`python manage.py migrate`
+
+### Start the development server
+
+`python manage.py runserver`
 
 
 ## 📝 Development Status
