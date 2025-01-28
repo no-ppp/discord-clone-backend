@@ -42,7 +42,6 @@ The project structure is organized as follows:
 ### Complete API Documentation
 For detailed API documentation, visit:
 - `/api/redoc/` - ReDoc API documentation
-- `/api/swagger/` - Swagger UI documentation
 
 ### Key Endpoints
 
