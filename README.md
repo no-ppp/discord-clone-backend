@@ -8,10 +8,11 @@ The backend of the Social Media App is built using Django and Django REST Framew
 - ✅ **Friend System**: Send, accept, and reject friend requests
 - ✅ **Real-time Notifications**: Using Django Channels and WebSockets
 - ✅ **RESTful API**: Comprehensive API for frontend interactions
+- ✅ **Real-time User Activity Status**: Online/Offline status 
 - 🚧 **Chat System**: Real-time messaging (In Progress)
 - 🔜 **User Groups**: Create and manage user groups (Planned)
 - 🔜 **Media Sharing**: Share images and files (Planned)
-- 🔜 **User Activity Status**: Online/Offline status (Planned)
+- 🔜 **User Profile**: Extended user profiles (Planned)
 
 ## 🛠 Technologies Used
 
